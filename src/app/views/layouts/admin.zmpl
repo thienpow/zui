@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>About - zUI</title>
+<script src="https://unpkg.com/htmx.org@2.0.0/dist/htmx.min.js"></script>
+
+@zig {
+    if (zmpl.getT(.string, "dark")) |dark|{
+        if (std.mem.eql(u8, dark, "checked")) {
+            @partial libs/styles/themes/default_dark
+        } else {
+            @partial libs/styles/themes/default
+        }
+    }
+}
+
+<style>
+    main {
+        background: inherit;
+        margin-top: 80px;
+        margin-left: 270px;
+        margin-right: 20px;
+        transition: margin-left 0.3s ease;
+    }
+
+    .main-content {
+        background: var(--color-surface);
+        padding: 30px;
+        border-radius: 15px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        margin-bottom: 80px;
+    }
+
+    .content-header h1 {
+        font-family: 'Georgia', serif;
+        color: var(--color-text-primary);
+        font-size: 28px;
+        font-weight: 600;
+        margin-bottom: 30px;
+    }
+
+
+    /* Media query for small screens */
+    @media (max-width: 768px) {
+        main {
+            margin-left: 20px;
+            margin-right: 20px;
+        }
+    }
+
+    @media (max-width: 480px) {
+        main {
+            margin-left: 6px;
+            margin-right: 6px;
+        }
+    }
+</style>
+
+</head>
+<body>
+    @partial layouts/admin/sidebar
+    @partial layouts/admin/topbar
+    <main>
+        {{zmpl.content}}
+    </main>
+</body>
+</html>
