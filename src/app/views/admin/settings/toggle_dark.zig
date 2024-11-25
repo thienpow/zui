@@ -1,7 +1,6 @@
 const std = @import("std");
 const jetzig = @import("jetzig");
 
-pub const layout = "admin";
 pub fn post(request: *jetzig.Request) !jetzig.View {
     const Params = struct {
         dark: []const u8,
