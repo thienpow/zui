@@ -4,7 +4,7 @@ zUI is a modern and lightweight UI kit designed for the [JetZig](https://github.
 
 ## Basic Features
 
-- **Super Lightweight:** Minimal overhead for fast performance. Targeting less than 50kb initial load, 1-2kb per sub-page load.
+- **Super Lightweight:** Minimal overhead for fast performance. Targeting less than 50kb load for whole page.
 - **Customizable:** Easily adaptable to your design needs.
 - **Component-Based:** Ready-to-use, pre-styled components, pages, partials, and icons.
 - **Seamless Integration:** Built specifically for the JetZig framework.
