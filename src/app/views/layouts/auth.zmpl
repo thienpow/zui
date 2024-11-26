@@ -20,6 +20,7 @@
 
         //code can be removed in production
         //check if user is on 127.0.0.1, if yes, redirect it to locahost
+        //this is to accept cookies from localhost
         if (window.location.hostname === "127.0.0.1") {
             window.location.href = "http://localhost:8080/auth/login";
         }
