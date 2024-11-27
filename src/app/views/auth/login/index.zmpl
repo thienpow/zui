@@ -13,7 +13,7 @@
         </div>
         <!--  -->
         <form class="auth-form"
-            hx-post="/auth/verify"
+            hx-post="/auth/login"
             hx-trigger="submit"
             hx-target="#error-message"
             hx-swap="innerHTML"
@@ -60,7 +60,7 @@
         </form>
 
         <div class="auth-footer">
-            <p>Don't have an account? <a href="/auth/signup"
+            <p>Don't have an account? <a href="/auth/register"
                hx-boost="true"
                hx-target=".auth-container"
                hx-swap="innerHTML">Sign up</a></p>

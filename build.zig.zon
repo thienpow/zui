@@ -24,7 +24,7 @@
     // internet connectivity.
     .dependencies = .{
         .jetzig = .{
-            .path = "../jetzig-framework/jetzig/",
+            .path = "../jetzig-framework/jetzig",
         },
     },
     .paths = .{

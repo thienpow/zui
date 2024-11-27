@@ -8,8 +8,12 @@
             <h3>Quick Links</h3>
             <ul>
                 <li><a href="/">Home</a></li>
-                <li><a href="/about">About</a></li>
-                <li><a href="/admin">Services</a></li>
+                <li><a hx-get="/landing/about"
+                    hx-push-url="true"
+                    hx-target="main"
+                    hx-swap="innerHTML">About</a>
+                </li>
+                <li><a href="/auth/login" target="_self">Admin</a></li>
             </ul>
         </div>
         <div class="footer-section">
@@ -52,11 +56,6 @@
 
     .footer-section ul li {
         margin-bottom: 0.5rem;
-    }
-
-    .footer-section ul li a {
-        color: white;
-        text-decoration: none;
     }
 
     footer .contact {

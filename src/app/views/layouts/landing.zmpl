@@ -41,6 +41,25 @@
             margin: 0;
             padding: 0;
         }
+
+
+        a {
+            display: inline-flex;
+            align-items: center;
+            color: inherit;
+            text-decoration: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        a:hover {
+            color: #0366d6;
+            background-color: rgba(3, 102, 214, 0.1);
+            transform: translateY(-1px);
+        }
+
     </style>
 
 </head>

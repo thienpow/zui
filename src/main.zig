@@ -93,49 +93,35 @@ pub const jetzig_options = struct {
 
     pub const markdown_fragments = struct {
         pub const root = .{
-            "<div class='p-5'>",
-            "</div>",
+            "<main>",
+            "</main>",
         };
         pub const h1 = .{
-            "<h1 class='text-2xl mb-3 text-green font-bold'>",
+            "<h1>",
             "</h1>",
         };
         pub const h2 = .{
-            "<h2 class='text-xl mb-3 font-bold'>",
+            "<h2>",
             "</h2>",
         };
         pub const h3 = .{
-            "<h3 class='text-lg mb-3 font-bold'>",
+            "<h3>",
             "</h3>",
         };
         pub const paragraph = .{
-            "<p class='p-3'>",
+            "<p>",
             "</p>",
-        };
-        pub const code = .{
-            "<span class='font-mono bg-gray-900 p-2 text-white'>",
-            "</span>",
-        };
-
-        pub const unordered_list = .{
-            "<ul class='list-disc ms-8 leading-8'>",
-            "</ul>",
-        };
-
-        pub const ordered_list = .{
-            "<ul class='list-decimal ms-8 leading-8'>",
-            "</ul>",
         };
 
         pub fn block(allocator: std.mem.Allocator, node: zmd.Node) ![]const u8 {
             return try std.fmt.allocPrint(allocator,
-                \\<pre class="w-1/2 font-mono mt-4 ms-3 bg-gray-900 p-2 text-white"><code class="language-{?s}">{s}</code></pre>
+                \\<pre><code class="language-{?s}">{s}</code></pre>
             , .{ node.meta, node.content });
         }
 
         pub fn link(allocator: std.mem.Allocator, node: zmd.Node) ![]const u8 {
             return try std.fmt.allocPrint(allocator,
-                \\<a class="underline decoration-sky-500" href="{0s}" title={1s}>{1s}</a>
+                \\<a href="{0s}" title={1s}>{1s}</a>
             , .{ node.href.?, node.title.? });
         }
     };

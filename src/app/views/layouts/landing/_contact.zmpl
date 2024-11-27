@@ -32,39 +32,6 @@
         margin-bottom: 1rem;
     }
 
-    .contact a {
-        display: inline-flex;
-        align-items: center;
-        color: inherit;
-        text-decoration: none;
-        padding: 4px 8px;
-        border-radius: 4px;
-        transition: all 0.3s ease;
-        position: relative;
-    }
-
-    .contact a:hover {
-        color: #0366d6;
-        background-color: rgba(3, 102, 214, 0.1);
-        transform: translateY(-1px);
-    }
-
-    .contact a::after {
-        content: "";
-        position: absolute;
-        width: 0;
-        height: 2px;
-        bottom: 0;
-        left: 50%;
-        background-color: currentColor;
-        transition: all 0.3s ease;
-    }
-
-    .contact a:hover::after {
-        width: 80%;
-        left: 10%;
-    }
-
     .contact .x-icon,
     .contact .github-icon {
         vertical-align: middle;

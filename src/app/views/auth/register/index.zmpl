@@ -20,13 +20,13 @@
             hx-indicator="#loading">
 
             <div class="form-group">
-                <input type="text" id="name" name="name" placeholder="Enter your name" required>
+                <input type="text" id="username" name="username" placeholder="Enter your username" required>
             </div>
             <div class="form-group">
                 <input type="email" id="email" name="email" placeholder="Enter your email" autocomplete="email" required>
             </div>
             <div class="form-group">
-                <input type="password" id="password" name="password" placeholder="Enter your password" autocomplete="new-password" required>  <!-- Changed autocomplete -->
+                <input type="password" id="password" name="password" placeholder="Enter your password" autocomplete="new-password" required>
             </div>
             <div class="form-group">
                 <input type="password" id="password_confirmation" name="password_confirmation" placeholder="Confirm your password" autocomplete="new-password" required>  <!-- Added password confirmation -->
@@ -83,7 +83,7 @@
     document.body.addEventListener('htmx:afterRequest', (event) => {
         const { xhr } = event.detail;
          if (xhr.responseText.trim() === "success") {
-            window.location.href = "/admin/dashboard"; // or wherever you want to redirect after signup
+            window.location.href = "/auth/login"; //
         }
     });
 

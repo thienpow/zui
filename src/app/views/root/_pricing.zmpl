@@ -9,7 +9,7 @@
             <li>✓ Basic Templates</li>
             <li>✓ Community Support</li>
         </ul>
-        <a href="https://github.com/your-repo" class="cta-button">Get Started</a>
+        <a href="https://github.com/thienpow/zui" class="cta-button">Get Started</a>
     </div>
 
     <div class="plan pro">
