@@ -23,8 +23,7 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
     const user = try request.repo.execute(query) orelse return request.fail(.not_found);
 
     // Verify the provided password matches the stored password hash
-    const passwordHash = user.password_hash orelse return request.fail(.unprocessable_entity);
-    if (!try jetzig.auth.verifyPassword(request.allocator, passwordHash, params.password)) {
+    if (!try jetzig.auth.verifyPassword(request.allocator, user.password_hash, params.password)) {
         return request.fail(.unauthorized);
     }
 
