@@ -23,7 +23,8 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
     const user = try request.repo.execute(query) orelse return request.fail(.not_found);
 
     // Verify the provided password matches the stored password hash
-    if (!try jetzig.auth.verifyPassword(request.allocator, user.password_hash, params.password)) {
+    const passwordHash = user.password_hash orelse return request.fail(.unprocessable_entity);
+    if (!try jetzig.auth.verifyPassword(request.allocator, passwordHash, params.password)) {
         return request.fail(.unauthorized);
     }
 
@@ -45,8 +46,5 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
 
     try redis_client.set(redis_key, token);
 
-    return request.render(.created, .{
-        .token = token,
-        .user_id = user.id,
-    });
+    return request.render(.created);
 }

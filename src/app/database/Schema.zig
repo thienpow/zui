@@ -4,58 +4,76 @@ pub const PasswordReset = jetquery.Model(
     @This(),
     "password_resets",
     struct {
-        id: u64,
-        user_id: u64,
+        id: u32,
+        user_id: u32,
         token: []const u8,
         expires_at: jetquery.DateTime,
         created_at: ?jetquery.DateTime,
     },
-    .{},
+    .{
+        .relations = .{
+            .user = jetquery.belongsTo(.User, .{}),
+        },
+    },
 );
 
 pub const Permission = jetquery.Model(
     @This(),
     "permissions",
     struct {
-        id: u64,
+        id: u32,
         name: []const u8,
         description: ?[]const u8,
         created_at: ?jetquery.DateTime,
         updated_at: ?jetquery.DateTime,
     },
-    .{},
+    .{
+        .relations = .{
+            .role_permissions = jetquery.hasMany(.RolePermission, .{}),
+        },
+    },
 );
 
 pub const RolePermission = jetquery.Model(
     @This(),
     "role_permissions",
     struct {
-        role_id: u64,
-        permission_id: u64,
+        role_id: u32,
+        permission_id: u32,
         created_at: ?jetquery.DateTime,
     },
-    .{},
+    .{
+        .relations = .{
+            .role = jetquery.belongsTo(.Role, .{}),
+            .permission = jetquery.belongsTo(.Permission, .{}),
+        },
+    },
 );
 
 pub const Role = jetquery.Model(
     @This(),
     "roles",
     struct {
-        id: u64,
+        id: u32,
         name: []const u8,
         description: ?[]const u8,
         created_at: ?jetquery.DateTime,
         updated_at: ?jetquery.DateTime,
     },
-    .{},
+    .{
+        .relations = .{
+            .user_roles = jetquery.hasMany(.UserRole, .{}),
+            .role_permissions = jetquery.hasMany(.RolePermission, .{}),
+        },
+    },
 );
 
 pub const SocialLogin = jetquery.Model(
     @This(),
     "social_logins",
     struct {
-        id: u64,
-        user_id: u64,
+        id: u32,
+        user_id: u32,
         provider: []const u8,
         provider_user_id: []const u8,
         provider_token: ?[]const u8,
@@ -64,41 +82,54 @@ pub const SocialLogin = jetquery.Model(
         created_at: ?jetquery.DateTime,
         updated_at: ?jetquery.DateTime,
     },
-    .{},
+    .{
+        .relations = .{
+            .user = jetquery.belongsTo(.User, .{}),
+        },
+    },
 );
 
 pub const UserActivityLog = jetquery.Model(
     @This(),
     "user_activity_logs",
     struct {
-        id: u64,
-        user_id: ?u64,
+        id: u32,
+        user_id: ?u32,
         activity_type: []const u8,
         description: ?[]const u8,
         ip_address: ?[]const u8,
         user_agent: ?[]const u8,
         created_at: ?jetquery.DateTime,
     },
-    .{},
+    .{
+        .relations = .{
+            .user = jetquery.belongsTo(.User, .{}),
+        },
+    },
 );
 
 pub const UserRole = jetquery.Model(
     @This(),
     "user_roles",
     struct {
-        user_id: u64,
-        role_id: u64,
+        user_id: u32,
+        role_id: u32,
         created_at: ?jetquery.DateTime,
     },
-    .{},
+    .{
+        .relations = .{
+            .user = jetquery.belongsTo(.User, .{}),
+            .role = jetquery.belongsTo(.Role, .{}),
+        },
+    },
 );
 
 pub const UserSession = jetquery.Model(
     @This(),
     "user_sessions",
     struct {
-        id: u64,
-        user_id: u64,
+        id: u32,
+        user_id: u32,
         token: []const u8,
         ip_address: ?[]const u8,
         user_agent: ?[]const u8,
@@ -106,17 +137,21 @@ pub const UserSession = jetquery.Model(
         expires_at: ?jetquery.DateTime,
         created_at: ?jetquery.DateTime,
     },
-    .{},
+    .{
+        .relations = .{
+            .user = jetquery.belongsTo(.User, .{}),
+        },
+    },
 );
 
 pub const User = jetquery.Model(
     @This(),
     "users",
     struct {
-        id: u64,
-        username: []const u8,
+        id: u32,
+        username: ?[]const u8,
         email: []const u8,
-        password_hash: []const u8,
+        password_hash: ?[]const u8,
         first_name: ?[]const u8,
         last_name: ?[]const u8,
         phone: ?[]const u8,
@@ -139,5 +174,13 @@ pub const User = jetquery.Model(
         updated_at: ?jetquery.DateTime,
         deleted_at: ?jetquery.DateTime,
     },
-    .{},
+    .{
+        .relations = .{
+            .social_logins = jetquery.hasMany(.SocialLogin, .{}),
+            .user_roles = jetquery.hasMany(.UserRole, .{}),
+            .user_sessions = jetquery.hasMany(.UserSession, .{}),
+            .password_resets = jetquery.hasMany(.PasswordReset, .{}),
+            .user_activity_logs = jetquery.hasMany(.UserActivityLog, .{}),
+        },
+    },
 );
