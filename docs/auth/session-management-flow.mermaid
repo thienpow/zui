@@ -1,0 +1,41 @@
+stateDiagram-v2
+    [*] --> Login: User Initiates Login
+    
+    state Login {
+        direction LR
+        ValidateCredentials --> GenerateToken
+        GenerateToken --> StoreCookie
+        StoreCookie --> StoreUserSessionTable
+    }
+    
+    state SessionValidation {
+        direction LR
+        CheckRedis --> CheckUserSessionTable : If not in Redis
+    }
+    
+    state SessionUpdate {
+        direction LR
+        UpdateRedis --> PeriodicSync
+    }
+    
+    state Logout {
+        direction LR
+        DeleteRedisSession --> InvalidateUserSessionTable
+    }
+    
+    Login --> SessionValidation : Token Generated
+    SessionValidation --> SessionUpdate : Session Valid
+    SessionUpdate --> [*] : Continue User Session
+    
+    note right of SessionValidation
+        Redis: Fast Check
+        PostgreSQL: Fallback Validation
+    end note
+    
+    note left of Logout
+        1. Remove from Redis
+        2. Mark Invalid in Database
+    end note
+    
+    SessionValidation --> Login : Invalid Session
+    Logout --> [*] : Session Terminated
