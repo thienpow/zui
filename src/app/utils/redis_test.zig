@@ -1,14 +1,127 @@
 const std = @import("std");
-const RedisClient = @import("redis.zig").RedisClient;
+const testing = std.testing;
+const expect = testing.expect;
+const expectEqual = testing.expectEqual;
+const expectEqualStrings = testing.expectEqualStrings;
 
-const expect = std.testing.expect;
+const redis = @import("redis.zig");
 
-test "basic set and get" {
+test "connection pool basic functionality" {
+    // Use testing allocator for proper memory tracking
+    const allocator = testing.allocator;
+
+    // Configure and create connection pool
+    const config = redis.RedisClientConfig{
+        .host = "localhost",
+        .port = 6379,
+        .max_connections = 5,
+    };
+    var pool = try redis.PooledRedisClient.init(allocator, config);
+    defer pool.deinit();
+
+    // Test basic connection and operations
+    {
+        const client1 = try pool.acquire();
+        defer pool.release(client1) catch {};
+
+        // Ping to verify connection
+        const ping_response = try client1.ping();
+        defer allocator.free(ping_response);
+        try expectEqualStrings("PONG", ping_response);
+
+        // Set and get a key
+        try client1.set("test_key_1", "test_value_1");
+        const value1 = try client1.get("test_key_1");
+        try testing.expect(value1 != null);
+        if (value1) |v| {
+            try expectEqualStrings("test_value_1", v);
+            allocator.free(v);
+        }
+    }
+
+    // Test multiple connection acquisitions
+    {
+        const client2 = try pool.acquire();
+        defer pool.release(client2) catch {};
+
+        const client3 = try pool.acquire();
+        defer pool.release(client3) catch {};
+
+        // Verify different connections
+        try expect(client2 != client3);
+
+        // Set and get on different connections
+        try client2.set("test_key_2", "test_value_2");
+        try client3.set("test_key_3", "test_value_3");
+
+        const value2 = try client2.get("test_key_2");
+        const value3 = try client3.get("test_key_3");
+
+        try testing.expect(value2 != null);
+        try testing.expect(value3 != null);
+
+        if (value2) |v2| {
+            defer allocator.free(v2);
+            try expectEqualStrings("test_value_2", v2);
+        }
+
+        if (value3) |v3| {
+            defer allocator.free(v3);
+            try expectEqualStrings("test_value_3", v3);
+        }
+    }
+
+    // Test key deletion
+    {
+        const client4 = try pool.acquire();
+        defer pool.release(client4) catch {};
+
+        try client4.set("delete_key", "delete_value");
+        const deleted_count = try client4.del("delete_key");
+        try expectEqual(@as(u64, 1), deleted_count);
+
+        const deleted_value = try client4.get("delete_key");
+        try expect(deleted_value == null);
+    }
+
+    // Test null key handling
+    {
+        const client5 = try pool.acquire();
+        defer pool.release(client5) catch {};
+
+        const non_existent_value = try client5.get("non_existent_key");
+        try expect(non_existent_value == null);
+    }
+
+    // Test pool exhaustion (if possible, depends on your Redis server)
+    // Note: This test might need to be adapted based on your specific connection handling
+    {
+        var connections = std.ArrayList(*redis.RedisClient).init(allocator);
+        defer connections.deinit();
+
+        // Try to acquire max connections
+        for (0..config.max_connections) |_| {
+            const conn = try pool.acquire();
+            try connections.append(conn);
+        }
+
+        // Attempt to acquire one more connection should fail or block
+        const acquire_result = pool.acquire();
+        try testing.expectError(redis.RedisError.PoolExhausted, acquire_result);
+
+        // Release all connections
+        for (connections.items) |conn| {
+            try pool.release(conn);
+        }
+    }
+}
+
+test "basic set and get without pool" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    var client = try RedisClient.connect(allocator, "127.0.0.1", 6379); // Ensure Redis is running!
+    var client = try redis.RedisClient.connect(allocator, "127.0.0.1", 6379); // Ensure Redis is running!
     defer client.disconnect();
 
     const p = User{ .id = 1, .token = "xyz123abc", .last_login = 1234567890 };
@@ -44,7 +157,7 @@ test "redis ping" {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    var client = try RedisClient.connect(allocator, "127.0.0.1", 6379);
+    var client = try redis.RedisClient.connect(allocator, "127.0.0.1", 6379);
     defer client.disconnect();
 
     const response = try client.ping();
