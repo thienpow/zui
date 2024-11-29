@@ -37,13 +37,32 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
     });
 
     // Store token in Redis for additional tracking
-    var redis_client = try RedisClient.connect(request.allocator, "127.0.0.1", 6379);
-    defer redis_client.disconnect();
+    // var redis_client = try RedisClient.connect(request.allocator, "127.0.0.1", 6379);
+    // defer redis_client.disconnect();
 
-    const redis_key = try std.fmt.allocPrint(request.allocator, "user:{d}", .{user.id});
-    defer request.allocator.free(redis_key);
+    // const redis_key = try std.fmt.allocPrint(request.allocator, "user:{d}", .{user.id});
+    // defer request.allocator.free(redis_key);
 
-    try redis_client.set(redis_key, token);
+    // try redis_client.set(redis_key, .{
+    //     .token = token,
+    //     .email = user.email,
+    //     .last_login = std.time.timestamp(),
+    //     .user_id = user.id,
+    // });
+
+    // // ** below is to retrieve the user details from redis
+    // //
+    // const UserDetails = struct {
+    //     token: []const u8,
+    //     email: []const u8,
+    //     last_login: i64,
+    //     user_id: u64,
+    // };
+    // const user_details = try redis_client.hmget(redis_key, UserDetails);
+    // defer {
+    //     request.allocator.free(user_details.token);
+    //     request.allocator.free(user_details.email);
+    // }
 
     return request.render(.created);
 }

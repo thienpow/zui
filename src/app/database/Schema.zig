@@ -4,8 +4,8 @@ pub const PasswordReset = jetquery.Model(
     @This(),
     "password_resets",
     struct {
-        id: u64,
-        user_id: u64,
+        id: i64,
+        user_id: i64,
         token: []const u8,
         expires_at: jetquery.DateTime,
         created_at: ?jetquery.DateTime,
@@ -21,7 +21,7 @@ pub const Permission = jetquery.Model(
     @This(),
     "permissions",
     struct {
-        id: u64,
+        id: i64,
         name: []const u8,
         description: ?[]const u8,
         created_at: ?jetquery.DateTime,
@@ -38,8 +38,8 @@ pub const RolePermission = jetquery.Model(
     @This(),
     "role_permissions",
     struct {
-        role_id: u64,
-        permission_id: u64,
+        role_id: i64,
+        permission_id: i64,
         created_at: ?jetquery.DateTime,
     },
     .{
@@ -54,7 +54,7 @@ pub const Role = jetquery.Model(
     @This(),
     "roles",
     struct {
-        id: u64,
+        id: i64,
         name: []const u8,
         description: ?[]const u8,
         created_at: ?jetquery.DateTime,
@@ -72,8 +72,8 @@ pub const SocialLogin = jetquery.Model(
     @This(),
     "social_logins",
     struct {
-        id: u64,
-        user_id: u64,
+        id: i64,
+        user_id: i64,
         provider: []const u8,
         provider_user_id: []const u8,
         provider_token: ?[]const u8,
@@ -93,8 +93,8 @@ pub const UserActivityLog = jetquery.Model(
     @This(),
     "user_activity_logs",
     struct {
-        id: u64,
-        user_id: ?u64,
+        id: i64,
+        user_id: ?i64,
         activity_type: []const u8,
         description: ?[]const u8,
         ip_address: ?[]const u8,
@@ -112,8 +112,8 @@ pub const UserRole = jetquery.Model(
     @This(),
     "user_roles",
     struct {
-        user_id: u64,
-        role_id: u64,
+        user_id: i64,
+        role_id: i64,
         created_at: ?jetquery.DateTime,
     },
     .{
@@ -128,8 +128,8 @@ pub const UserSession = jetquery.Model(
     @This(),
     "user_sessions",
     struct {
-        id: u64,
-        user_id: u64,
+        id: i64,
+        user_id: i64,
         token: []const u8,
         ip_address: ?[]const u8,
         user_agent: ?[]const u8,
@@ -148,7 +148,7 @@ pub const User = jetquery.Model(
     @This(),
     "users",
     struct {
-        id: u64,
+        id: i64,
         username: []const u8,
         email: []const u8,
         password_hash: []const u8,
