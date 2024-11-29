@@ -80,6 +80,11 @@
 </div>
 
 <style>
+    button {
+        padding: 12px 24px;
+        white-space: nowrap;
+    }
+
     .profile-container {
         max-width: 800px;
         margin: 0 auto;
