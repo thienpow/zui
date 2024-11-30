@@ -7,6 +7,12 @@ const zmd = @import("zmd");
 pub const routes = @import("routes");
 pub const static = @import("static");
 
+const redis = @import("app/utils/redis.zig");
+
+pub const Global = struct {
+    redis_pool: redis.PooledRedisClient,
+};
+
 // Override default settings in `jetzig.config` here:
 pub const jetzig_options = struct {
     pub const middleware: []const type = &.{
@@ -141,5 +147,18 @@ pub fn main() !void {
     var app = try jetzig.init(allocator);
     defer app.deinit();
 
-    try app.start(routes, .{});
+    // Configure and create connection pool
+    const redis_config = redis.RedisClientConfig{
+        .host = "localhost",
+        .port = 6379,
+        .max_connections = 5,
+    };
+
+    var pool = try redis.PooledRedisClient.init(allocator, redis_config);
+    defer pool.deinit();
+
+    const global = try allocator.create(Global);
+    global.* = .{ .redis_pool = pool };
+
+    try app.start(routes, .{ .global = global });
 }

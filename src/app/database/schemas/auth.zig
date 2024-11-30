@@ -1,98 +1,20 @@
-const jetquery = @import("jetzig").jetquery;
+const std = @import("std");
 
-pub const PasswordReset = jetquery.Model(@This(), "password_resets", struct {
-    id: u64,
-    user_id: u64,
+pub const UserSession = struct {
+    id: i64,
     token: []const u8,
-    expires_at: jetquery.DateTime,
-    created_at: ?jetquery.DateTime,
-}, .{});
+    last_activity: i64,
 
-pub const Permission = jetquery.Model(@This(), "permissions", struct {
-    id: u64,
-    name: []const u8,
-    description: ?[]const u8,
-    created_at: ?jetquery.DateTime,
-    updated_at: ?jetquery.DateTime,
-}, .{});
-
-pub const RolePermission = jetquery.Model(@This(), "role_permissions", struct {
-    role_id: u64,
-    permission_id: u64,
-    created_at: ?jetquery.DateTime,
-}, .{});
-
-pub const Role = jetquery.Model(@This(), "roles", struct {
-    id: u64,
-    name: []const u8,
-    description: ?[]const u8,
-    created_at: ?jetquery.DateTime,
-    updated_at: ?jetquery.DateTime,
-}, .{});
-
-pub const SocialLogin = jetquery.Model(@This(), "social_logins", struct {
-    id: u64,
-    user_id: u64,
-    provider: []const u8,
-    provider_user_id: []const u8,
-    provider_token: ?[]const u8,
-    provider_refresh_token: ?[]const u8,
-    token_expires_at: ?jetquery.DateTime,
-    created_at: ?jetquery.DateTime,
-    updated_at: ?jetquery.DateTime,
-}, .{});
-
-pub const UserActivityLog = jetquery.Model(@This(), "user_activity_logs", struct {
-    id: u64,
-    user_id: ?u64,
-    activity_type: []const u8,
-    description: ?[]const u8,
-    ip_address: ?[]const u8,
-    user_agent: ?[]const u8,
-    created_at: ?jetquery.DateTime,
-}, .{});
-
-pub const UserRole = jetquery.Model(@This(), "user_roles", struct {
-    user_id: u64,
-    role_id: u64,
-    created_at: ?jetquery.DateTime,
-}, .{});
-
-pub const UserSession = jetquery.Model(@This(), "user_sessions", struct {
-    id: u64,
-    user_id: u64,
-    token: []const u8,
-    ip_address: ?[]const u8,
-    user_agent: ?[]const u8,
-    last_activity: ?jetquery.DateTime,
-    expires_at: ?jetquery.DateTime,
-    created_at: ?jetquery.DateTime,
-}, .{});
-
-pub const User = jetquery.Model(@This(), "users", struct {
-    id: u64,
-    username: ?[]const u8,
-    email: []const u8,
-    password_hash: ?[]const u8,
-    first_name: ?[]const u8,
-    last_name: ?[]const u8,
-    phone: ?[]const u8,
-    profile_picture: ?[]const u8,
-    bio: ?[]const u8,
-    date_of_birth: ?jetquery.DateTime,
-    gender: ?[]const u8,
-    address: ?[]const u8,
-    city: ?[]const u8,
-    country: ?[]const u8,
-    postal_code: ?[]const u8,
-    last_login_at: ?jetquery.DateTime,
-    email_verified_at: ?jetquery.DateTime,
-    phone_verified_at: ?jetquery.DateTime,
-    is_active: ?bool,
-    is_banned: ?bool,
-    ban_reason: ?[]const u8,
-    account_type: ?[]const u8,
-    created_at: ?jetquery.DateTime,
-    updated_at: ?jetquery.DateTime,
-    deleted_at: ?jetquery.DateTime,
-}, .{});
+    pub fn format(
+        user: UserSession,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try writer.writeAll("{");
+        _ = try writer.print("\"id\":{},", .{user.id});
+        _ = try writer.print("\"token\":\"{s}\",", .{user.token});
+        _ = try writer.print("\"last_activity\":{}", .{user.last_activity});
+        try writer.writeAll("}");
+    }
+};

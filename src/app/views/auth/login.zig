@@ -1,7 +1,7 @@
 const std = @import("std");
 const jetzig = @import("jetzig");
 const jetquery = @import("jetzig").jetquery;
-const RedisClient = @import("../../utils/redis.zig").RedisClient;
+const auth = @import("../../database/schemas/auth.zig");
 
 pub const layout = "auth";
 pub fn index(request: *jetzig.Request, _: *jetzig.Data) !jetzig.View {
@@ -36,33 +36,22 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
         .token = token,
     });
 
-    // Store token in Redis for additional tracking
-    // var redis_client = try RedisClient.connect(request.allocator, "127.0.0.1", 6379);
-    // defer redis_client.disconnect();
+    var redis = request.global.redis_pool;
+    //defer redis.release(redis);
 
-    // const redis_key = try std.fmt.allocPrint(request.allocator, "user:{d}", .{user.id});
-    // defer request.allocator.free(redis_key);
+    // Acquire a connection from the pool
+    const client1 = try redis.acquire();
+    defer redis.release(client1) catch {};
 
-    // try redis_client.set(redis_key, .{
-    //     .token = token,
-    //     .email = user.email,
-    //     .last_login = std.time.timestamp(),
-    //     .user_id = user.id,
-    // });
+    // Set the session token in Redis
+    const redis_key = try std.fmt.allocPrint(request.allocator, "user:{d}", .{user.id});
+    defer request.allocator.free(redis_key);
 
-    // // ** below is to retrieve the user details from redis
-    // //
-    // const UserDetails = struct {
-    //     token: []const u8,
-    //     email: []const u8,
-    //     last_login: i64,
-    //     user_id: u64,
-    // };
-    // const user_details = try redis_client.hmget(redis_key, UserDetails);
-    // defer {
-    //     request.allocator.free(user_details.token);
-    //     request.allocator.free(user_details.email);
-    // }
+    const p = auth.UserSession{ .id = user.id, .token = token, .last_activity = 0 };
+    const redis_value = try std.fmt.allocPrint(request.allocator, "{}", .{p});
+    defer request.allocator.free(redis_value);
+
+    try client1.set(redis_key, redis_value);
 
     return request.render(.created);
 }
