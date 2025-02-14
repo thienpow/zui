@@ -56,7 +56,7 @@ pub const PooledRedisClient = struct {
         // First, check if we have an available connection
         if (self.available_connections.items.len > 0) {
             const index = self.available_connections.pop();
-            return &self.connections.items[index];
+            return &self.connections.items[index.?];
         }
 
         // If we haven't reached max connections, create a new one
