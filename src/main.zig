@@ -7,10 +7,15 @@ const zmd = @import("zmd");
 pub const routes = @import("routes");
 pub const static = @import("static");
 
-const auth = @import("app/security/auth.zig").Auth;
+const redis = @import("app/database/redis/redis.zig");
+const RedisClientConfig = redis.RedisClientConfig;
+const PooledRedisClient = redis.PooledRedisClient;
+const Security = @import("app/security/security.zig").Security;
+const SecurityConfig = @import("app/security/config.zig").SecurityConfig;
 
 pub const Global = struct {
-    auth: auth,
+    redis_pool: redis.PooledRedisClient,
+    security: Security,
 };
 
 // Override default settings in `jetzig.config` here:
@@ -147,11 +152,57 @@ pub fn main() !void {
     var app = try jetzig.init(allocator);
     defer app.deinit();
 
-    var security_auth = try auth.init(allocator);
-    defer security_auth.deinit();
+    // Initialize Redis pool
+    const redis_config = RedisClientConfig{
+        .host = "localhost",
+        .port = 6379,
+        .max_connections = 5,
+    };
+    var redis_pool = try PooledRedisClient.init(allocator, redis_config);
+    defer redis_pool.deinit();
+
+    const security_config = SecurityConfig{
+        .session = .{
+            .max_sessions_per_user = 5,
+            .session_ttl = 24 * 60 * 60, // 24 hours in seconds
+            .refresh_threshold = 60 * 60, // 1 hour in seconds
+            .cleanup_interval = 60 * 60, // 1 hour in seconds
+        },
+        .storage = .{
+            .storage_type = .both,
+            .cleanup_batch_size = 1000,
+        },
+        .tokens = .{
+            .access_token_ttl = 15 * 60, // 15 minutes
+            .refresh_token_ttl = 7 * 24 * 60 * 60, // 7 days
+            .token_length = 48,
+        },
+        .rate_limit = .{
+            .max_attempts = 5,
+            .window_seconds = 300, // 5 minutes
+            .lockout_duration = 900, // 15 minutes
+        },
+        .audit = .{
+            .enabled = true,
+            .high_risk_events = &.{
+                .login_failed,
+                .password_changed,
+                .mfa_disabled,
+            },
+            .log_retention_days = 90,
+        },
+        .redis_pool = &redis_pool,
+    };
+
+    // Initialize security with the config
+    var security = try Security.init(allocator, security_config);
+    defer security.deinit();
 
     const global = try allocator.create(Global);
-    global.* = .{ .auth = security_auth };
+    global.* = .{
+        .redis_pool = redis_pool,
+        .security = security,
+    };
 
     try app.start(routes, .{ .global = global });
 }
