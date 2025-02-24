@@ -89,7 +89,7 @@ pub const RedisClient = struct {
 
         while (self.reconnect_attempts < self.max_reconnect_attempts) : (self.reconnect_attempts += 1) {
             // Try to establish new connection
-            const new_client = RedisClient.connect(self.allocator, self.config) catch |err| {
+            var new_client = RedisClient.connect(self.allocator, self.config) catch |err| {
                 std.log.err("Reconnection attempt {d} failed: {}", .{ self.reconnect_attempts + 1, err });
                 if (self.reconnect_attempts + 1 == self.max_reconnect_attempts) {
                     return RedisError.ReconnectFailed;
@@ -98,10 +98,23 @@ pub const RedisClient = struct {
                 continue;
             };
 
-            // If connection successful, update current client
+            // If connection successful, properly transfer ownership and cleanup
             self.socket = new_client.socket;
             self.connected = true;
             self.last_used_timestamp = std.time.milliTimestamp();
+
+            // Clean up old resources
+            self.buffer_pool.deinit();
+            self.allocator.destroy(self.buffer_pool);
+
+            // Transfer ownership of new resources
+            self.buffer_pool = new_client.buffer_pool;
+            self.command_buffer.deinit();
+            self.command_buffer = new_client.command_buffer;
+
+            // Just set connected to false since we transferred ownership
+            new_client.connected = false;
+
             self.reconnect_attempts = 0;
             return;
         }
@@ -248,20 +261,25 @@ pub const RedisClient = struct {
 
         if (length == -1) return;
 
+        // Allocate buffer with room for data + \r\n
         const data = try self.allocator.alloc(u8, @intCast(length + 2));
         defer self.allocator.free(data);
 
         const bytes_read = reader.readAll(data) catch |err| switch (err) {
             error.InputOutput => return RedisError.InputOutput,
-            error.BrokenPipe => return RedisError.NetworkError,
-            error.ConnectionResetByPeer => return RedisError.NetworkError,
-            error.ConnectionTimedOut => return RedisError.Timeout,
             error.SystemResources => return RedisError.SystemResources,
-            error.WouldBlock => return RedisError.NetworkError,
             error.SocketNotConnected => return RedisError.SocketNotConnected,
-            else => return RedisError.NetworkError,
+            // Map other relevant errors
+            error.ConnectionTimedOut => return RedisError.Timeout,
+            error.BrokenPipe, error.ConnectionResetByPeer => return RedisError.NetworkError,
+            else => return RedisError.NetworkError, // Generic fallback for other errors
         };
         if (bytes_read != length + 2) return RedisError.InvalidResponse;
+
+        // Verify \r\n terminator
+        if (data[@intCast(length)] != '\r' or data[@intCast(length + 1)] != '\n') {
+            return RedisError.InvalidResponse;
+        }
 
         try buffer.appendSlice(data);
     }
@@ -289,7 +307,10 @@ pub const RedisClient = struct {
         const cmd = "PING\r\n";
         const response = try self.executeCommand(cmd);
         defer self.allocator.free(response);
-        return try self.allocator.dupe(u8, "PONG");
+
+        // Parse response properly instead of assuming PONG
+        if (!std.mem.startsWith(u8, response, "+")) return RedisError.InvalidResponse;
+        return try self.allocator.dupe(u8, response[1 .. response.len - 2]); // Strip +OK\r\n
     }
 
     pub fn set(self: *Self, key: []const u8, value: []const u8) !void {
@@ -303,18 +324,28 @@ pub const RedisClient = struct {
 
     pub fn get(self: *Self, key: []const u8) !?[]const u8 {
         if (key.len == 0) return RedisError.InvalidArgument;
+
         const cmd = try self.formatCommand("*2\r\n$3\r\nGET\r\n${d}\r\n{s}\r\n", .{ key.len, key });
         defer self.allocator.free(cmd);
+
         const response = try self.executeCommand(cmd);
         defer self.allocator.free(response);
 
         if (response[0] == '$') {
             if (std.mem.eql(u8, response[0..4], "$-1\r")) return null;
+
+            // Safe parsing of length
             const len_end = std.mem.indexOf(u8, response, "\r\n") orelse return RedisError.InvalidResponse;
+            if (len_end >= response.len - 2) return RedisError.InvalidResponse;
+
             const len = try std.fmt.parseInt(usize, response[1..len_end], 10);
             const value_start = len_end + 2;
             const value_end = value_start + len;
-            if (value_end > response.len) return RedisError.InvalidResponse;
+
+            // Bounds checking
+            if (value_end > response.len - 2) return RedisError.InvalidResponse;
+            if (response[value_end] != '\r' or response[value_end + 1] != '\n') return RedisError.InvalidResponse;
+
             return try self.allocator.dupe(u8, response[value_start..value_end]);
         }
         return RedisError.InvalidResponse;
@@ -331,8 +362,13 @@ pub const RedisClient = struct {
     }
 
     pub fn setEx(self: *Self, key: []const u8, value: []const u8, ttl_seconds: i64) !void {
+        // Add validation
+        if (key.len == 0 or value.len == 0) return RedisError.InvalidArgument;
+        if (ttl_seconds <= 0) return RedisError.InvalidArgument;
+
         const cmd = try self.formatCommand("*4\r\n$5\r\nSETEX\r\n${d}\r\n{s}\r\n${d}\r\n{d}\r\n${d}\r\n{s}\r\n", .{ key.len, key, std.fmt.count("{d}", .{ttl_seconds}), ttl_seconds, value.len, value });
         defer self.allocator.free(cmd);
+
         const response = try self.executeCommand(cmd);
         defer self.allocator.free(response);
         if (!std.mem.eql(u8, response, "+OK\r\n")) return RedisError.SetFailed;
