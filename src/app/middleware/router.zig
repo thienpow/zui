@@ -1,6 +1,16 @@
 const std = @import("std");
 const jetzig = @import("jetzig");
 
+const security = @import("../security/security.zig"); // Import Security module
+const SecurityError = @import("../security/security.zig").SecurityError; // Import SecurityError
+
+// Example: List of URL path prefixes that are protected
+const protected_prefixes = &.{
+    "/admin/",
+    "/api/private/",
+    // ... add more prefixes as needed
+};
+
 const layout_mappings = [_][2][]const u8{
     .{ "/", "landing" },
     .{ "/about", "landing" },
@@ -66,11 +76,13 @@ pub fn afterRequest(_: *router, request: *jetzig.http.Request) !void {
     }
 }
 
-pub fn beforeResponse(
-    _: *router,
-    _: *jetzig.http.Request,
-    _: *jetzig.http.Response,
-) !void {}
+pub fn beforeRequest(self: *router, request: *jetzig.http.Request) !void {
+
+    // Run authentication middleware first for protected routes
+    try authenticateMiddleware(self, request); // Call the authentication middleware
+
+    // ... (rest of your existing beforeRequest logic, e.g., layout setting, etc.)
+}
 
 pub fn afterResponse(
     self: *router,
@@ -84,4 +96,24 @@ pub fn afterResponse(
 
 pub fn deinit(self: *router, request: *jetzig.http.Request) void {
     request.allocator.destroy(self);
+}
+
+pub fn authenticateMiddleware(self: *router, request: *jetzig.http.Request) !void {
+    _ = self;
+
+    // Check if the request path starts with any protected prefix
+    for (protected_prefixes) |prefix| {
+        if (std.mem.startsWith(u8, request.path.base_path, prefix)) {
+            // This route is protected, validate session
+            _ = request.global.security.validateSession(request) catch |err| {
+                std.log.warn("Session validation failed for path {s}: {}", .{ request.path.base_path, err });
+                return error.UnauthorizedAccess; // Indicate unauthorized access
+                // Alternatively, you could redirect to login page if it's a browser request:
+                // return request.redirect("/auth/login");
+            };
+            // Session is valid, request proceeds
+            return;
+        }
+    }
+    // Route is not protected, continue without validation
 }

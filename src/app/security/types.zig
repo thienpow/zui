@@ -1,5 +1,7 @@
 pub const SecurityEvent = enum {
     // Authentication events
+    credential_check,
+    access_denied,
     login_success,
     login_failed,
     logout,
@@ -102,10 +104,13 @@ pub const SessionMetadata = struct {
 
 pub const User = struct {
     id: u64,
+    email: []const u8,
     last_ip: ?[]const u8,
     last_user_agent: ?[]const u8,
     device_id: ?[]const u8,
-    // Add other user fields as needed
+    last_login_at: i64, // Using i64 to accommodate negative timestamps if needed
+    is_active: ?bool,
+    is_banned: ?bool,
 };
 
 pub const Tokens = struct {

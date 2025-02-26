@@ -26,7 +26,7 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
             null,
             .{
                 .action_details = "Missing required parameters",
-                .ip_address = request.headers.get("X-Forwarded-For") orelse "unknown",
+                .ip_address = try request.global.security.getIdentifier(request),
                 .user_agent = request.headers.get("User-Agent"),
             },
         );
