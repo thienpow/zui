@@ -20,9 +20,9 @@ pub const TokenError = error{
 pub const TokenManager = struct {
     allocator: std.mem.Allocator,
     token_config: TokenConfig,
-    redis_pool: *PooledRedisClient,
+    redis_pool: PooledRedisClient,
 
-    pub fn init(allocator: std.mem.Allocator, token_config: TokenConfig, redis_pool: *PooledRedisClient) !TokenManager {
+    pub fn init(allocator: std.mem.Allocator, token_config: TokenConfig, redis_pool: PooledRedisClient) !TokenManager {
         return .{
             .allocator = allocator,
             .token_config = token_config,

@@ -416,6 +416,7 @@ pub const RedisClient = struct {
     }
 
     pub fn sMembers(self: *RedisClient, key: []const u8) !?[][]const u8 {
+        std.log.info("[redis_client.sMembers] start", .{});
         if (key.len == 0) return RedisError.InvalidArgument;
 
         // Format SMEMBERS command
@@ -423,8 +424,18 @@ pub const RedisClient = struct {
         defer self.allocator.free(cmd);
 
         // Execute command
+        std.log.info("[redis_client.sMembers] Command: '{s}'", .{cmd});
         const response = try self.executeCommand(cmd);
         defer self.allocator.free(response);
+
+        // Debug the exact response
+        std.log.info("[redis_client.sMembers] Response: '{s}', length: {d}", .{ response, response.len });
+
+        // Basic handling for simple empty responses
+        if (std.mem.eql(u8, response, "*0")) {
+            std.log.info("[redis_client.sMembers] Got simple *0 response", .{});
+            return null;
+        }
 
         // Handle array response
         if (response[0] == '*') {
@@ -437,14 +448,24 @@ pub const RedisClient = struct {
             }
 
             // Parse number of elements
-            const len_end = std.mem.indexOf(u8, response[1..], "\r\n") orelse return RedisError.InvalidResponse;
-            const num_elements = try std.fmt.parseInt(i64, response[1..len_end], 10);
+            const len_end = std.mem.indexOf(u8, response[1..], "\r\n") orelse {
+                std.log.err("[redis_client.sMembers] No \\r\\n found after '*' character", .{});
+                return RedisError.InvalidResponse;
+            };
+
+            const num_elements_str = response[1 .. 1 + len_end];
+            std.log.info("[redis_client.sMembers] Parsing number of elements: '{s}'", .{num_elements_str});
+
+            const num_elements = try std.fmt.parseInt(i64, num_elements_str, 10);
+            std.log.info("[redis_client.sMembers] Number of elements: {d}", .{num_elements});
 
             if (num_elements == 0) return null;
             if (num_elements == -1) return null;
 
             var current_pos: usize = len_end + 3; // Skip past initial *n\r\n
             var i: i64 = 0;
+
+            std.log.info("[redis_client.sMembers] -- inside Handle array response, before while loop {any}", .{0});
             while (i < num_elements) : (i += 1) {
                 // Each element starts with $len\r\n
                 if (response[current_pos] != '$') return RedisError.InvalidResponse;
@@ -459,6 +480,7 @@ pub const RedisClient = struct {
                 current_pos += str_len + 2; // Skip past string and \r\n
             }
 
+            std.log.info("[redis_client.sMembers] -- before result {any}", .{0});
             const result = try strings.toOwnedSlice();
             return result;
         }

@@ -33,11 +33,13 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
         return request.fail(.unprocessable_entity);
     };
 
+    //std.log.info("params: {any}", .{params});
     // Attempt authentication with credentials
     _ = request.global.security.authenticate(request, .{
         .email = params.email,
         .password = params.password,
     }) catch |err| {
+        std.log.info("err: {any}", .{err});
         return switch (err) {
             SecurityError.UserNotFound => request.fail(.not_found), //User not found
             SecurityError.InvalidCredentials => request.fail(.unauthorized), //Invalid credentials"to generate session

@@ -44,7 +44,7 @@ pub const Security = struct {
     rate_limiter: RateLimiter,
     audit: AuditLog,
     config: config.SecurityConfig,
-    redis_pool: *PooledRedisClient,
+    redis_pool: PooledRedisClient,
 
     pub fn init(allocator: std.mem.Allocator, security_config: SecurityConfig) !Security {
         var storage = try SessionStorage.init(
@@ -223,7 +223,7 @@ pub const Security = struct {
 
         // 1. Rate limit check
         const rate_limit_info = try self.rate_limiter.check(identifier);
-        // Check if account is locked
+        //Check if account is locked
         if (rate_limit_info.is_locked) {
             // try self.handleValidationError(
             //     error.AccountLocked,
@@ -258,18 +258,22 @@ pub const Security = struct {
         };
 
         // 3. Create session
+        std.log.info("[security.authenticate] -- 3. Create session: {any}", .{0});
         const session = try self.session.create(auth_result.user);
 
         // 4. Generate tokens
+        std.log.info("[security.authenticate] -- 4. Generate tokens: {any}", .{0});
         const tokens = try self.tokens.generate(session);
 
         // 5. Log successful authentication
+        std.log.info("[security.authenticate] -- 5. Log successful authentication: {any}", .{0});
         try self.audit.log(.login_success, auth_result.user.id, .{
             .action_details = "Successful login",
             .ip_address = identifier,
         });
 
         // 6. Reset rate limit counter on success
+        std.log.info("[security.authenticate] -- 6. Reset rate limit counter on success: {any}", .{0});
         try self.rate_limiter.reset(identifier);
 
         return AuthResult{
@@ -289,8 +293,12 @@ pub const Security = struct {
             return SecurityError.InvalidInput;
         }
 
+        //std.log.info("fn validateCredentials -- 1: {any}", .{credentials.email});
         // 1. Database Query using jetzig.database.Query and findBy
         const query = jetzig.database.Query(.User)
+            .include(.user_roles, .{
+            .include = .{.role},
+        })
             .findBy(.{ .email = credentials.email });
 
         // Add audit context for the lookup attempt
@@ -330,6 +338,14 @@ pub const Security = struct {
             return SecurityError.InvalidCredentials;
         };
 
+        std.log.info("User found: id={d}, username={s}, email={s}", .{
+            user.id,
+            user.username,
+            user.email,
+        });
+        //std.log.info("User Found: {any}", .{user});
+
+        //std.log.info("fn validateCredentials -- Account status verification: {any}", .{user.username});
         // 2. Account status verification
         if (user.is_banned != null and user.is_banned.?) {
             try self.audit.log(.access_denied, @intCast(user.id), .{
@@ -363,8 +379,9 @@ pub const Security = struct {
             return SecurityError.AccountInactive;
         }
 
+        //std.log.info("Password Hash Verification: {any}", .{user});
         // 3. Password Hash Verification
-        const is_password_valid = jetzig.auth.verifyPassword(self.allocator, credentials.password, user.password_hash) catch |err| {
+        const is_password_valid = jetzig.auth.verifyPassword(self.allocator, user.password_hash, credentials.password) catch |err| {
             std.log.err("Password verification error: {}", .{err});
             return SecurityError.InternalError;
         };
@@ -379,13 +396,14 @@ pub const Security = struct {
 
         // 4. User last login info
         const user_agent = request.headers.get("User-Agent") orelse "";
+        //std.log.info("fn validateCredentials -- user_agent: {any}", .{0});
 
         // 5. Create and Return User struct with updated information
+        //
         return .{
             .user = User{
                 .id = @intCast(user.id),
                 .email = user.email,
-                //TODO: query user need to include withRelation so that we can include the user_roles, suggest jetQuery to add this feature.
                 //.roles = user.user_roles,
                 .is_active = user.is_active,
                 .is_banned = user.is_banned,

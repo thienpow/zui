@@ -15,10 +15,10 @@ pub const StorageType = enum {
 
 pub const SessionStorage = struct {
     allocator: std.mem.Allocator,
-    redis_pool: *PooledRedisClient,
+    redis_pool: PooledRedisClient,
     session_config: SessionConfig,
 
-    pub fn init(allocator: std.mem.Allocator, session_config: SessionConfig, redis_pool: *PooledRedisClient) !SessionStorage {
+    pub fn init(allocator: std.mem.Allocator, session_config: SessionConfig, redis_pool: PooledRedisClient) !SessionStorage {
         return .{
             .allocator = allocator,
             .redis_pool = redis_pool,
@@ -33,37 +33,35 @@ pub const SessionStorage = struct {
     }
 
     pub fn getSession(self: *SessionStorage, token: []const u8) !?Session {
+        std.log.info("[session_storage.getSession] token={s}", .{token});
         var client = try self.redis_pool.acquire();
         defer self.redis_pool.release(client) catch |err| {
-            std.log.err("Failed to release Redis client: {}", .{err});
+            std.log.err("Failed to release Redis client in getSession: {}", .{err});
         };
 
         const key = try std.fmt.allocPrint(self.allocator, "session:{s}", .{token});
         defer self.allocator.free(key);
 
         // Handle the optional result from get()
-        const data = try client.get(key);
+        const data = (try client.get(key)) orelse {
+            std.log.info("[session_storage.getSession] Key not found: {s}", .{key});
+            return null;
+        };
 
-        if (data) |session_data| {
-            defer self.allocator.free(session_data);
+        defer self.allocator.free(data);
 
-            const parsed = std.json.parseFromSlice(
-                Session,
-                self.allocator,
-                session_data,
-                .{},
-            ) catch |err| {
-                std.log.err("Failed to parse session data: {}", .{err});
-                return null;
-            };
-            defer parsed.deinit();
+        const parsed = std.json.parseFromSlice(
+            Session,
+            self.allocator,
+            data,
+            .{},
+        ) catch |err| {
+            std.log.err("Failed to parse session data: {}", .{err});
+            return null;
+        };
+        defer parsed.deinit();
 
-            // Create a copy of the parsed session
-            const session = parsed.value;
-            return session;
-        }
-
-        return null;
+        return parsed.value;
     }
 
     // fn saveToDatabase(self: *SessionStorage, session: Session) !void {
@@ -174,6 +172,7 @@ pub const SessionStorage = struct {
         var sessions = std.ArrayList(Session).init(self.allocator);
         errdefer sessions.deinit();
 
+        std.log.info("[session_storage.getUserActiveSessions] -- before redis_pool.acquire {any}", .{0});
         var client = try self.redis_pool.acquire();
         defer self.redis_pool.release(client) catch |err| {
             std.log.err("Failed to release Redis client: {}", .{err});
@@ -182,14 +181,16 @@ pub const SessionStorage = struct {
         const user_key = try std.fmt.allocPrint(self.allocator, "user:{}:sessions", .{user_id});
         defer self.allocator.free(user_key);
 
+        std.log.info("[session_storage.getUserActiveSessions] -- before sMember {any}", .{0});
         if (try client.sMembers(user_key)) |session_ids| {
+            std.log.info("[session_storage.getUserActiveSessions] -- after sMember {any}", .{0});
             for (session_ids) |session_id| {
                 if (try self.getSession(session_id)) |session| {
                     try sessions.append(session);
                 }
             }
         }
-
+        std.log.info("session_storage.getUserActiveSessions -- after sMembers {any}", .{1});
         return sessions.toOwnedSlice(); // Caller needs to free this
     }
 

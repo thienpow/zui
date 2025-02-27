@@ -44,13 +44,16 @@ pub const SessionManager = struct {
 
     pub fn create(self: *SessionManager, user: User) !Session {
         // Check active session count
+        std.log.info("[session_manager.create] -- Check active session count {any}", .{0});
         const active_sessions = try self.storage.getUserActiveSessions(user.id);
+
         if (active_sessions.len >= self.session_config.max_sessions_per_user) {
             // Either return error or invalidate oldest session
             try self.storage.invalidateSession(active_sessions[0].id);
         }
 
         // Create new session
+        std.log.info("[session_manager.create] -- Create new session {any}", .{0});
         const session = Session{
             .id = try self.generateSessionId(),
             .user_id = user.id,
@@ -65,6 +68,7 @@ pub const SessionManager = struct {
         };
 
         // Save session
+        std.log.info("[session_manager.create] -- Save session {any}", .{0});
         try self.storage.saveSession(session);
 
         return session;

@@ -14,7 +14,6 @@ const Security = @import("app/security/security.zig").Security;
 const SecurityConfig = @import("app/security/config.zig").SecurityConfig;
 
 pub const Global = struct {
-    redis_pool: redis.PooledRedisClient,
     security: Security,
 };
 
@@ -55,93 +54,21 @@ pub const jetzig_options = struct {
 
     pub const store: jetzig.kv.Store.KVOptions = .{
         .backend = .memory,
-        // .backend = .file,
-        // .file_options = .{
-        //     .path = "/path/to/jetkv-store.db",
-        //     .truncate = false, // Set to `true` to clear the store on each server launch.
-        //     .address_space_size = jetzig.jetkv.JetKV.FileBackend.addressSpace(4096),
-        // },
     };
 
     pub const job_queue: jetzig.kv.Store.KVOptions = .{
         .backend = .memory,
-        // .backend = .file,
-        // .file_options = .{
-        //     .path = "/path/to/jetkv-queue.db",
-        //     .truncate = false, // Set to `true` to clear the store on each server launch.
-        //     .address_space_size = jetzig.jetkv.JetKV.FileBackend.addressSpace(4096),
-        // },
     };
 
     pub const cache: jetzig.kv.Store.KVOptions = .{
         .backend = .memory,
-        // .backend = .file,
-        // .file_options = .{
-        //     .path = "/path/to/jetkv-cache.db",
-        //     .truncate = false, // Set to `true` to clear the store on each server launch.
-        //     .address_space_size = jetzig.jetkv.JetKV.FileBackend.addressSpace(4096),
-        // },
     };
-
-    /// SMTP configuration for Jetzig Mail. It is recommended to use a local SMTP relay,
-    /// e.g.: https://github.com/juanluisbaptiste/docker-postfix
-    ///
-    /// Each configuration option can be overridden with environment variables:
-    /// `JETZIG_SMTP_PORT`
-    /// `JETZIG_SMTP_ENCRYPTION`
-    /// `JETZIG_SMTP_HOST`
-    /// `JETZIG_SMTP_USERNAME`
-    /// `JETZIG_SMTP_PASSWORD`
-    // pub const smtp: jetzig.mail.SMTPConfig = .{
-    //     .port = 25,
-    //     .encryption = .none, // .insecure, .none, .tls, .start_tls
-    //     .host = "localhost",
-    //     .username = null,
-    //     .password = null,
-    // };
 
     pub const force_development_email_delivery = false;
-
-    pub const markdown_fragments = struct {
-        pub const root = .{
-            "<main>",
-            "</main>",
-        };
-        pub const h1 = .{
-            "<h1>",
-            "</h1>",
-        };
-        pub const h2 = .{
-            "<h2>",
-            "</h2>",
-        };
-        pub const h3 = .{
-            "<h3>",
-            "</h3>",
-        };
-        pub const paragraph = .{
-            "<p>",
-            "</p>",
-        };
-
-        pub fn block(allocator: std.mem.Allocator, node: zmd.Node) ![]const u8 {
-            return try std.fmt.allocPrint(allocator,
-                \\<pre><code class="language-{?s}">{s}</code></pre>
-            , .{ node.meta, node.content });
-        }
-
-        pub fn link(allocator: std.mem.Allocator, node: zmd.Node) ![]const u8 {
-            return try std.fmt.allocPrint(allocator,
-                \\<a href="{0s}" title={1s}>{1s}</a>
-            , .{ node.href.?, node.title.? });
-        }
-    };
 };
 
 pub fn init(app: *jetzig.App) !void {
     _ = app;
-    // Example custom route:
-    // app.route(.GET, "/custom/:id/foo/bar", @import("app/views/custom/foo.zig"), .bar);
 }
 
 pub fn main() !void {
@@ -158,6 +85,7 @@ pub fn main() !void {
         .port = 6379,
         .max_connections = 5,
     };
+
     var redis_pool = try PooledRedisClient.init(allocator, redis_config);
     defer redis_pool.deinit();
 
@@ -191,7 +119,7 @@ pub fn main() !void {
             },
             .log_retention_days = 90,
         },
-        .redis_pool = &redis_pool,
+        .redis_pool = redis_pool,
     };
 
     // Initialize security with the config
@@ -200,7 +128,6 @@ pub fn main() !void {
 
     const global = try allocator.create(Global);
     global.* = .{
-        .redis_pool = redis_pool,
         .security = security,
     };
 

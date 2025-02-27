@@ -52,9 +52,9 @@ pub const AuditLog = struct {
     allocator: std.mem.Allocator,
     config: AuditLogConfig,
     context: AuditContext,
-    redis_pool: *PooledRedisClient,
+    redis_pool: PooledRedisClient,
 
-    pub fn init(allocator: std.mem.Allocator, config: AuditLogConfig, context: AuditContext, redis_pool: *PooledRedisClient) !AuditLog {
+    pub fn init(allocator: std.mem.Allocator, config: AuditLogConfig, context: AuditContext, redis_pool: PooledRedisClient) !AuditLog {
         return AuditLog{
             .allocator = allocator,
             .config = config,
