@@ -12,7 +12,6 @@ pub const SecurityConfig = struct {
     tokens: TokenConfig,
     rate_limit: RateLimitConfig,
     audit: AuditConfig,
-    redis_pool: PooledRedisClient,
 
     pub fn validate(self: SecurityConfig) !void {
         if (self.session.session_ttl <= 0) return error.InvalidSessionTTL;

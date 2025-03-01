@@ -31,13 +31,15 @@ pub const RedisError = error{
     EndOfStream,
     SystemResources,
     InputOutput,
+    NoAvailableConnections,
 };
 
 pub const RedisClientConfig = struct {
     host: []const u8 = "localhost",
     port: u16 = 6379,
-    max_connections: usize = 10,
-    connection_timeout_ms: i64 = 5000,
+    min_connections: usize = 3,
+    max_connections: usize = 50,
+    timeout_ms: u64 = 5000,
     idle_timeout_ms: i64 = 30000,
     read_timeout_ms: i64 = 5000,
     password: ?[]const u8 = null,

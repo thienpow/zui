@@ -1,15 +1,12 @@
 const std = @import("std");
 const builtin = @import("builtin");
-
 const jetzig = @import("jetzig");
 const zmd = @import("zmd");
-
 pub const routes = @import("routes");
 pub const static = @import("static");
-
 const redis = @import("app/database/redis/redis.zig");
-const RedisClientConfig = redis.RedisClientConfig;
 const PooledRedisClient = redis.PooledRedisClient;
+const RedisClientConfig = redis.RedisClientConfig;
 const Security = @import("app/security/security.zig").Security;
 const SecurityConfig = @import("app/security/config.zig").SecurityConfig;
 
@@ -73,22 +70,23 @@ pub fn init(app: *jetzig.App) !void {
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+
     const allocator = if (builtin.mode == .Debug) gpa.allocator() else std.heap.c_allocator;
     defer if (builtin.mode == .Debug) std.debug.assert(gpa.deinit() == .ok);
 
     var app = try jetzig.init(allocator);
     defer app.deinit();
 
-    // Initialize Redis pool
-    const redis_config = RedisClientConfig{
+    const redis_pool_ptr = try allocator.create(PooledRedisClient);
+    errdefer allocator.destroy(redis_pool_ptr);
+
+    redis_pool_ptr.* = try PooledRedisClient.init(allocator, RedisClientConfig{
         .host = "localhost",
         .port = 6379,
-        .max_connections = 5,
-    };
+        .max_connections = 10,
+    });
 
-    var redis_pool = try PooledRedisClient.init(allocator, redis_config);
-    defer redis_pool.deinit();
-
+    // Initialize security with the config
     const security_config = SecurityConfig{
         .session = .{
             .max_sessions_per_user = 5,
@@ -119,11 +117,9 @@ pub fn main() !void {
             },
             .log_retention_days = 90,
         },
-        .redis_pool = redis_pool,
     };
 
-    // Initialize security with the config
-    var security = try Security.init(allocator, security_config);
+    var security = try Security.init(allocator, security_config, redis_pool_ptr);
     defer security.deinit();
 
     const global = try allocator.create(Global);

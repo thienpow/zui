@@ -33,38 +33,41 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
         return request.fail(.unprocessable_entity);
     };
 
-    //std.log.info("params: {any}", .{params});
     // Attempt authentication with credentials
     _ = request.global.security.authenticate(request, .{
         .email = params.email,
         .password = params.password,
     }) catch |err| {
-        std.log.info("err: {any}", .{err});
-        return switch (err) {
-            SecurityError.UserNotFound => request.fail(.not_found), //User not found
-            SecurityError.InvalidCredentials => request.fail(.unauthorized), //Invalid credentials"to generate session
-            else => request.fail(.internal_server_error), //Authentication failed
-        };
+        std.log.debug("[route.login] Authentication failed with error: {s}", .{@errorName(err)});
+        switch (err) {
+            SecurityError.AccountLocked => {
+                std.log.debug("[route.login] Account locked, returning 403", .{});
+                return request.fail(.forbidden); // 403
+            },
+            SecurityError.RateLimitExceeded => {
+                std.log.debug("[route.login] Rate limit exceeded, returning 429", .{});
+                return request.fail(.too_many_requests); // 429
+            },
+            SecurityError.UserNotFound => {
+                std.log.debug("[route.login] User not found, returning 404", .{});
+                return request.fail(.not_found); // 404
+            },
+            SecurityError.InvalidCredentials => {
+                std.log.debug("[route.login] Invalid credentials, returning 401", .{});
+                return request.fail(.unauthorized); // 401
+            },
+            SecurityError.ValidationError => {
+                std.log.debug("[route.login] Validation error, returning 400", .{});
+                return request.fail(.bad_request); // 400
+            },
+            else => {
+                std.log.err("[route.login] Unexpected error: {s}", .{@errorName(err)});
+                return request.fail(.internal_server_error); // 500
+            },
+        }
     };
-
-    // // Set session cookies
-    // try request.setCookie("access_token", auth_result.tokens.access, .{
-    //     .http_only = true,
-    //     .secure = true,
-    //     .same_site = .strict,
-    // });
-
-    // try request.setCookie("refresh_token", auth_result.tokens.refresh, .{
-    //     .http_only = true,
-    //     .secure = true,
-    //     .same_site = .strict,
-    // });
-
-    // try request.setCookie("csrf_token", auth_result.tokens.csrf, .{
-    //     .http_only = false, // Allow JavaScript access for CSRF protection
-    //     .secure = true,
-    //     .same_site = .strict,
-    // });
+    std.log.debug("[route.login] Authentication succeeded", .{});
+    // ... proceed with successful response ...
 
     return request.render(.created);
 }

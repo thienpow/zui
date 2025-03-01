@@ -15,8 +15,6 @@ pub const RedisClient = struct {
     config: RedisClientConfig,
     reconnect_attempts: u8 = 0,
     max_reconnect_attempts: u8 = 3,
-    buffer_pool: *BufferPool,
-    command_buffer: std.ArrayList(u8),
 
     const Self = @This();
 
@@ -39,16 +37,15 @@ pub const RedisClient = struct {
     }
 
     pub fn disconnect(self: *Self) void {
+        if (!self.connected) return; // Already disconnected
+
         self.socket.close();
         self.connected = false;
         self.last_used_timestamp = 0;
-        self.command_buffer.deinit();
-        self.buffer_pool.deinit();
-        self.allocator.destroy(self.buffer_pool);
     }
 
     pub fn connect(allocator: std.mem.Allocator, config: RedisClientConfig) RedisError!Self {
-        var socket = std.net.tcpConnectToHost(allocator, config.host, config.port) catch |err| {
+        const socket = std.net.tcpConnectToHost(allocator, config.host, config.port) catch |err| {
             return switch (err) {
                 error.ConnectionRefused => RedisError.ConnectionRefused,
                 error.NetworkUnreachable, error.ConnectionTimedOut, error.ConnectionPending, error.ConnectionResetByPeer, error.SocketNotConnected, error.AddressInUse, error.AddressNotAvailable => RedisError.NetworkError,
@@ -56,10 +53,6 @@ pub const RedisClient = struct {
                 else => RedisError.ConnectionFailed,
             };
         };
-        errdefer socket.close();
-
-        const buffer_pool = try allocator.create(BufferPool);
-        buffer_pool.* = BufferPool.init(allocator);
 
         var client = Self{
             .allocator = allocator,
@@ -69,8 +62,6 @@ pub const RedisClient = struct {
             .config = config,
             .reconnect_attempts = 0,
             .max_reconnect_attempts = 3,
-            .buffer_pool = buffer_pool,
-            .command_buffer = std.ArrayList(u8).init(allocator),
         };
 
         // Initial ping to verify connection
@@ -84,56 +75,68 @@ pub const RedisClient = struct {
         return client;
     }
 
-    pub fn reconnect(self: *Self) !void {
+    pub fn reconnect(self: *Self) RedisError!void {
         if (self.connected) self.disconnect();
 
+        std.log.debug("Starting reconnect with max attempts: {d}", .{self.max_reconnect_attempts});
+
         while (self.reconnect_attempts < self.max_reconnect_attempts) : (self.reconnect_attempts += 1) {
-            // Try to establish new connection
-            var new_client = RedisClient.connect(self.allocator, self.config) catch |err| {
-                std.log.err("Reconnection attempt {d} failed: {}", .{ self.reconnect_attempts + 1, err });
-                if (self.reconnect_attempts + 1 == self.max_reconnect_attempts) {
-                    return RedisError.ReconnectFailed;
-                }
-                std.time.sleep(std.time.ns_per_s); // 1 second delay between attempts
-                continue;
+            std.log.debug("Reconnection attempt {d}/{d}", .{ self.reconnect_attempts + 1, self.max_reconnect_attempts });
+            self.socket = std.net.tcpConnectToHost(self.allocator, self.config.host, self.config.port) catch |err| switch (err) {
+                error.ConnectionRefused => {
+                    std.log.err("Reconnection attempt {d}/{d} failed: ConnectionRefused", .{ self.reconnect_attempts + 1, self.max_reconnect_attempts });
+                    if (self.reconnect_attempts + 1 == self.max_reconnect_attempts) return RedisError.ConnectionRefused;
+                    std.time.sleep(std.time.ns_per_s);
+                    continue;
+                },
+                error.NetworkUnreachable => {
+                    std.log.err("Reconnection attempt {d}/{d} failed: {}", .{ self.reconnect_attempts + 1, self.max_reconnect_attempts, err });
+                    if (self.reconnect_attempts + 1 == self.max_reconnect_attempts) return RedisError.NetworkError;
+                    std.time.sleep(std.time.ns_per_s);
+                    continue;
+                },
+                error.OutOfMemory => return RedisError.OutOfMemory,
+                else => {
+                    std.log.err("Reconnection attempt {d}/{d} failed: {}", .{ self.reconnect_attempts + 1, self.max_reconnect_attempts, err });
+                    if (self.reconnect_attempts + 1 == self.max_reconnect_attempts) return RedisError.ReconnectFailed;
+                    std.time.sleep(std.time.ns_per_s);
+                    continue;
+                },
             };
 
-            // If connection successful, properly transfer ownership and cleanup
-            self.socket = new_client.socket;
             self.connected = true;
             self.last_used_timestamp = std.time.milliTimestamp();
-
-            // Clean up old resources
-            self.buffer_pool.deinit();
-            self.allocator.destroy(self.buffer_pool);
-
-            // Transfer ownership of new resources
-            self.buffer_pool = new_client.buffer_pool;
-            self.command_buffer.deinit();
-            self.command_buffer = new_client.command_buffer;
-
-            // Just set connected to false since we transferred ownership
-            new_client.connected = false;
-
             self.reconnect_attempts = 0;
+            std.log.info("Reconnection succeeded after {d} attempts", .{self.reconnect_attempts + 1});
             return;
         }
 
+        std.log.err("All reconnection attempts failed after {d} tries", .{self.max_reconnect_attempts});
         return RedisError.ReconnectFailed;
     }
 
-    pub fn auth(self: *Self, password: []const u8) !void {
-        const cmd = try self.formatCommand("*2\r\n$4\r\nAUTH\r\n${d}\r\n{s}\r\n", .{ password.len, password });
+    pub fn auth(self: *Self, password: []const u8) RedisError!void {
+        const cmd = self.formatCommand("*2\r\n$4\r\nAUTH\r\n${d}\r\n{s}\r\n", .{ password.len, password }) catch return RedisError.OutOfMemory;
         defer self.allocator.free(cmd);
-        const response = try self.executeCommand(cmd);
+        const response = self.executeCommand(cmd) catch |err| return switch (err) {
+            error.OutOfMemory => RedisError.OutOfMemory,
+            error.ConnectionFailed => RedisError.ConnectionFailed,
+            error.NetworkError => RedisError.NetworkError,
+            else => RedisError.NetworkError, // Fallback
+        };
         defer self.allocator.free(response);
         if (!std.mem.eql(u8, response, "+OK\r\n")) return RedisError.AuthenticationFailed;
     }
 
-    pub fn select(self: *Self, db: u32) !void {
-        const cmd = try self.formatCommand("*2\r\n$6\r\nSELECT\r\n${d}\r\n{d}\r\n", .{ std.fmt.count("{d}", .{db}), db });
+    pub fn select(self: *Self, db: u32) RedisError!void {
+        const cmd = self.formatCommand("*2\r\n$6\r\nSELECT\r\n${d}\r\n{d}\r\n", .{ std.fmt.count("{d}", .{db}), db }) catch return RedisError.OutOfMemory;
         defer self.allocator.free(cmd);
-        const response = try self.executeCommand(cmd);
+        const response = self.executeCommand(cmd) catch |err| return switch (err) {
+            error.OutOfMemory => RedisError.OutOfMemory,
+            error.ConnectionFailed => RedisError.ConnectionFailed,
+            error.NetworkError => RedisError.NetworkError,
+            else => RedisError.NetworkError, // Fallback
+        };
         defer self.allocator.free(response);
         if (!std.mem.eql(u8, response, "+OK\r\n")) return RedisError.CommandFailed;
     }
@@ -143,20 +146,37 @@ pub const RedisClient = struct {
     }
 
     fn executeCommand(self: *Self, cmd: []const u8) ![]const u8 {
+        std.log.debug("[redis_client.executeCommand] Starting with command: '{s}'", .{cmd});
+
         if (!self.connected) {
+            std.log.debug("[redis_client.executeCommand] No active connection detected", .{});
+            std.log.debug("[redis_client.executeCommand] Attempting to reconnect", .{});
             try self.reconnect();
+            std.log.debug("[redis_client.executeCommand] Reconnect completed", .{});
         }
 
         const start_time = std.time.milliTimestamp();
+        std.log.debug("[redis_client.executeCommand] Start timestamp: {d}ms", .{start_time});
+
         var retry_count: u8 = 0;
         const max_retries: u8 = 3;
+        std.log.debug("[redis_client.executeCommand] Max retries configured: {d}", .{max_retries});
 
         while (retry_count < max_retries) : (retry_count += 1) {
-            if (std.time.milliTimestamp() - start_time > self.config.read_timeout_ms) {
+            std.log.debug("[redis_client.executeCommand] Attempt {d}/{d}", .{ retry_count + 1, max_retries });
+
+            const current_time = std.time.milliTimestamp();
+            const elapsed = current_time - start_time;
+            std.log.debug("[redis_client.executeCommand] Elapsed time: {d}ms, timeout limit: {d}ms", .{ elapsed, self.config.read_timeout_ms });
+
+            if (elapsed > self.config.read_timeout_ms) {
+                std.log.debug("[redis_client.executeCommand] Timeout exceeded after {d}ms", .{elapsed});
                 return RedisError.Timeout;
             }
 
+            std.log.debug("[redis_client.executeCommand] Sending command", .{});
             self.sendCommand(cmd) catch |err| {
+                std.log.debug("[redis_client.executeCommand] Send failed with error: {}", .{err});
                 switch (err) {
                     error.ConnectionResetByPeer,
                     error.BrokenPipe,
@@ -167,16 +187,32 @@ pub const RedisClient = struct {
                     error.WouldBlock,
                     error.SocketNotConnected,
                     => {
-                        try self.reconnect();
+                        std.log.debug("[redis_client.executeCommand] Connection error detected, attempting reconnect", .{});
+                        self.reconnect() catch |reconnect_err| {
+                            std.log.err("[redis_client.executeCommand] Reconnect failed: {}", .{reconnect_err});
+                            return reconnect_err;
+                        };
+                        std.log.debug("[redis_client.executeCommand] Reconnect successful, retrying", .{});
                         continue;
                     },
-                    else => return err,
+                    else => {
+                        std.log.debug("[redis_client.executeCommand] Unrecoverable error, propagating: {}", .{err});
+                        return err;
+                    },
                 }
             };
 
-            return self.readResponse();
+            std.log.debug("[redis_client.executeCommand] Command sent, reading response", .{});
+            const response = self.readResponse() catch |err| {
+                std.log.debug("[redis_client.executeCommand] Response read failed: {}", .{err});
+                return err;
+            };
+
+            std.log.debug("[redis_client.executeCommand] Response received successfully, length: {d}", .{response.len});
+            return response;
         }
 
+        std.log.debug("[redis_client.executeCommand] Max retries ({d}) exhausted", .{max_retries});
         return RedisError.CommandFailed;
     }
 
@@ -187,14 +223,40 @@ pub const RedisClient = struct {
     }
 
     fn readResponse(self: *Self) ![]const u8 {
+        std.log.debug("[redis_client.readResponse] Starting response read", .{});
+
         var buffer = std.ArrayList(u8).init(self.allocator);
-        errdefer buffer.deinit();
+        errdefer {
+            std.log.debug("[redis_client.readResponse] Error occurred, cleaning up buffer", .{});
+            buffer.deinit();
+        }
 
+        std.log.debug("[redis_client.readResponse] Getting socket reader", .{});
         const reader = self.socket.reader();
-        const response_type = try self.readResponseType(&buffer, reader);
-        try self.parseResponse(&buffer, reader, response_type);
 
-        return buffer.toOwnedSlice();
+        std.log.debug("[redis_client.readResponse] Reading response type", .{});
+        const response_type = self.readResponseType(&buffer, reader) catch |err| {
+            std.log.debug("[redis_client.readResponse] Failed to read response type: {}", .{err});
+            std.log.debug("[redis_client.readResponse] Current buffer content: '{s}'", .{buffer.items});
+            return err;
+        };
+        std.log.debug("[redis_client.readResponse] Response type received: '{}'", .{response_type});
+
+        std.log.debug("[redis_client.readResponse] Parsing response with type '{}'", .{response_type});
+        self.parseResponse(&buffer, reader, response_type) catch |err| {
+            std.log.debug("[redis_client.readResponse] Failed to parse response: {}", .{err});
+            std.log.debug("[redis_client.readResponse] Buffer content at failure: '{s}'", .{buffer.items});
+            return err;
+        };
+        std.log.debug("[redis_client.readResponse] Response parsing completed successfully", .{});
+
+        const result = buffer.toOwnedSlice() catch |err| {
+            std.log.debug("[redis_client.readResponse] Failed to convert buffer to slice: {}", .{err});
+            return err;
+        };
+        std.log.debug("[redis_client.readResponse] Returning response, length: {d}", .{result.len});
+
+        return result;
     }
 
     fn readResponseType(_: *Self, buffer: *std.ArrayList(u8), reader: anytype) !ResponseType {
@@ -222,11 +284,37 @@ pub const RedisClient = struct {
     }
 
     fn parseResponse(self: *Self, buffer: *std.ArrayList(u8), reader: anytype, response_type: ResponseType) RedisError!void {
+        std.log.debug("[redis_client.parseResponse] Starting with type: '{s}'", .{@tagName(response_type)});
+        std.log.debug("[redis_client.parseResponse] Initial buffer: '{s}'", .{buffer.items});
+
         switch (response_type) {
-            .SimpleString, .Error, .Integer => try self.readLine(buffer, reader),
-            .BulkString => try self.readBulkString(buffer, reader),
-            .Array => try self.readArray(buffer, reader),
+            .SimpleString => {
+                std.log.debug("[redis_client.parseResponse] Parsing SimpleString", .{});
+                try self.readLine(buffer, reader);
+                std.log.debug("[redis_client.parseResponse] SimpleString parsed, buffer now: '{s}'", .{buffer.items});
+            },
+            .Error => {
+                std.log.debug("[redis_client.parseResponse] Parsing Error", .{});
+                try self.readLine(buffer, reader);
+                std.log.debug("[redis_client.parseResponse] Error parsed, buffer now: '{s}'", .{buffer.items});
+            },
+            .Integer => {
+                std.log.debug("[redis_client.parseResponse] Parsing Integer", .{});
+                try self.readLine(buffer, reader);
+                std.log.debug("[redis_client.parseResponse] Integer parsed, buffer now: '{s}'", .{buffer.items});
+            },
+            .BulkString => {
+                std.log.debug("[redis_client.parseResponse] Parsing BulkString", .{});
+                try self.readBulkString(buffer, reader);
+                std.log.debug("[redis_client.parseResponse] BulkString parsed, buffer now: '{s}'", .{buffer.items});
+            },
+            .Array => {
+                std.log.debug("[redis_client.parseResponse] Parsing Array", .{});
+                try self.readArray(buffer, reader);
+                std.log.debug("[redis_client.parseResponse] Array parsed, buffer now: '{s}'", .{buffer.items});
+            },
         }
+        std.log.debug("[redis_client.parseResponse] Parsing completed successfully", .{});
     }
 
     fn readLine(_: *Self, buffer: *std.ArrayList(u8), reader: anytype) RedisError!void {
@@ -250,38 +338,71 @@ pub const RedisClient = struct {
     }
 
     fn readBulkString(self: *Self, buffer: *std.ArrayList(u8), reader: anytype) RedisError!void {
-        try self.readLine(buffer, reader);
+        std.log.debug("[redis_client.readBulkString] Starting, initial buffer: '{s}'", .{buffer.items});
 
-        const line = buffer.items[1..];
-        const len_end = std.mem.indexOf(u8, line, "\r") orelse return RedisError.InvalidResponse;
+        try self.readLine(buffer, reader);
+        std.log.debug("[redis_client.readBulkString] Length line read, buffer now: '{s}'", .{buffer.items});
+
+        // Find the '$' to start parsing the length
+        const dollar_pos = std.mem.lastIndexOfScalar(u8, buffer.items, '$') orelse {
+            std.log.debug("[redis_client.readBulkString] No '$' found in buffer", .{});
+            return RedisError.InvalidResponse;
+        };
+        const line = buffer.items[dollar_pos + 1 ..];
+        const len_end = std.mem.indexOf(u8, line, "\r") orelse {
+            std.log.debug("[redis_client.readBulkString] No \\r found in length line", .{});
+            return RedisError.InvalidResponse;
+        };
+        std.log.debug("[redis_client.readBulkString] Length end at position {d}, line: '{s}'", .{ len_end, line });
+
         const length = std.fmt.parseInt(i64, line[0..len_end], 10) catch |err| switch (err) {
             error.Overflow => return RedisError.Overflow,
             error.InvalidCharacter => return RedisError.InvalidFormat,
         };
+        std.log.debug("[redis_client.readBulkString] Parsed length: {d}", .{length});
 
-        if (length == -1) return;
+        if (length == -1) {
+            std.log.debug("[redis_client.readBulkString] Length is -1 (null), returning", .{});
+            return;
+        }
 
-        // Allocate buffer with room for data + \r\n
-        const data = try self.allocator.alloc(u8, @intCast(length + 2));
+        if (length < 0) {
+            std.log.debug("[redis_client.readBulkString] Invalid negative length: {d}", .{length});
+            return RedisError.InvalidResponse;
+        }
+
+        const length_usize: usize = @intCast(length); // Convert i64 to usize safely
+        const total_len: usize = length_usize + 2;
+        std.log.debug("[redis_client.readBulkString] Allocating buffer for {d} bytes + \\r\\n", .{length});
+        const data = try self.allocator.alloc(u8, total_len);
         defer self.allocator.free(data);
 
+        std.log.debug("[redis_client.readBulkString] Reading {d} bytes", .{total_len});
         const bytes_read = reader.readAll(data) catch |err| switch (err) {
             error.InputOutput => return RedisError.InputOutput,
             error.SystemResources => return RedisError.SystemResources,
             error.SocketNotConnected => return RedisError.SocketNotConnected,
-            // Map other relevant errors
             error.ConnectionTimedOut => return RedisError.Timeout,
             error.BrokenPipe, error.ConnectionResetByPeer => return RedisError.NetworkError,
-            else => return RedisError.NetworkError, // Generic fallback for other errors
+            else => {
+                std.log.debug("[redis_client.readBulkString] Unexpected read error: {s}", .{@errorName(err)});
+                return RedisError.NetworkError;
+            },
         };
-        if (bytes_read != length + 2) return RedisError.InvalidResponse;
+        std.log.debug("[redis_client.readBulkString] Read {d} bytes", .{bytes_read});
 
-        // Verify \r\n terminator
-        if (data[@intCast(length)] != '\r' or data[@intCast(length + 1)] != '\n') {
+        if (bytes_read != total_len) {
+            std.log.debug("[redis_client.readBulkString] Incomplete read: expected {d}, got {d}", .{ total_len, bytes_read });
+            return RedisError.InvalidResponse;
+        }
+
+        if (data[length_usize] != '\r' or data[length_usize + 1] != '\n') {
+            std.log.debug("[redis_client.readBulkString] Invalid terminator: '{c}', '{c}'", .{ data[length_usize], data[length_usize + 1] });
             return RedisError.InvalidResponse;
         }
 
         try buffer.appendSlice(data);
+        std.log.debug("[redis_client.readBulkString] Bulk string completed, final buffer: '{s}'", .{buffer.items});
     }
 
     fn readArray(self: *Self, buffer: *std.ArrayList(u8), reader: anytype) RedisError!void {
@@ -416,31 +537,35 @@ pub const RedisClient = struct {
     }
 
     pub fn sMembers(self: *RedisClient, key: []const u8) !?[][]const u8 {
-        std.log.info("[redis_client.sMembers] start", .{});
-        if (key.len == 0) return RedisError.InvalidArgument;
+        std.log.debug("[redis_client.sMembers] Function started with key: '{s}'", .{key});
+        if (key.len == 0) {
+            std.log.debug("[redis_client.sMembers] Empty key detected, returning InvalidArgument", .{});
+            return RedisError.InvalidArgument;
+        }
 
         // Format SMEMBERS command
+        std.log.debug("[redis_client.sMembers] Formatting SMEMBERS command", .{});
         const cmd = try self.formatCommand("*2\r\n$8\r\nSMEMBERS\r\n${d}\r\n{s}\r\n", .{ key.len, key });
         defer self.allocator.free(cmd);
 
-        // Execute command
-        std.log.info("[redis_client.sMembers] Command: '{s}'", .{cmd});
+        std.log.debug("[redis_client.sMembers] Formatted command: '{s}'", .{cmd});
         const response = try self.executeCommand(cmd);
         defer self.allocator.free(response);
 
-        // Debug the exact response
-        std.log.info("[redis_client.sMembers] Response: '{s}', length: {d}", .{ response, response.len });
+        std.log.debug("[redis_client.sMembers] Raw response received: '{s}', length: {d}", .{ response, response.len });
 
         // Basic handling for simple empty responses
         if (std.mem.eql(u8, response, "*0")) {
-            std.log.info("[redis_client.sMembers] Got simple *0 response", .{});
+            std.log.debug("[redis_client.sMembers] Empty set response (*0) received, returning null", .{});
             return null;
         }
 
         // Handle array response
         if (response[0] == '*') {
+            std.log.debug("[redis_client.sMembers] Processing array response", .{});
             var strings = std.ArrayList([]const u8).init(self.allocator);
             errdefer {
+                std.log.debug("[redis_client.sMembers] Error cleanup: freeing {d} strings", .{strings.items.len});
                 for (strings.items) |item| {
                     self.allocator.free(item);
                 }
@@ -449,42 +574,60 @@ pub const RedisClient = struct {
 
             // Parse number of elements
             const len_end = std.mem.indexOf(u8, response[1..], "\r\n") orelse {
-                std.log.err("[redis_client.sMembers] No \\r\\n found after '*' character", .{});
+                std.log.debug("[redis_client.sMembers] Invalid response: no \\r\\n found after '*'", .{});
                 return RedisError.InvalidResponse;
             };
 
             const num_elements_str = response[1 .. 1 + len_end];
-            std.log.info("[redis_client.sMembers] Parsing number of elements: '{s}'", .{num_elements_str});
+            std.log.debug("[redis_client.sMembers] Parsing element count from: '{s}'", .{num_elements_str});
 
             const num_elements = try std.fmt.parseInt(i64, num_elements_str, 10);
-            std.log.info("[redis_client.sMembers] Number of elements: {d}", .{num_elements});
+            std.log.debug("[redis_client.sMembers] Parsed number of elements: {d}", .{num_elements});
 
-            if (num_elements == 0) return null;
-            if (num_elements == -1) return null;
-
-            var current_pos: usize = len_end + 3; // Skip past initial *n\r\n
-            var i: i64 = 0;
-
-            std.log.info("[redis_client.sMembers] -- inside Handle array response, before while loop {any}", .{0});
-            while (i < num_elements) : (i += 1) {
-                // Each element starts with $len\r\n
-                if (response[current_pos] != '$') return RedisError.InvalidResponse;
-
-                const str_len_end = std.mem.indexOf(u8, response[current_pos + 1 ..], "\r\n") orelse return RedisError.InvalidResponse;
-                const str_len = try std.fmt.parseInt(usize, response[current_pos + 1 .. current_pos + 1 + str_len_end], 10);
-
-                current_pos += str_len_end + 3; // Skip past $len\r\n
-                const string = response[current_pos .. current_pos + str_len];
-                try strings.append(try self.allocator.dupe(u8, string));
-
-                current_pos += str_len + 2; // Skip past string and \r\n
+            if (num_elements == 0) {
+                std.log.debug("[redis_client.sMembers] Zero elements in set, returning null", .{});
+                return null;
+            }
+            if (num_elements == -1) {
+                std.log.debug("[redis_client.sMembers] Negative element count (-1), returning null", .{});
+                return null;
             }
 
-            std.log.info("[redis_client.sMembers] -- before result {any}", .{0});
+            var current_pos: usize = len_end + 3;
+            var i: i64 = 0;
+
+            std.log.debug("[redis_client.sMembers] Starting to parse {d} elements at position {d}", .{ num_elements, current_pos });
+            while (i < num_elements) : (i += 1) {
+                std.log.debug("[redis_client.sMembers] Processing element {d}/{d} at position {d}", .{ i + 1, num_elements, current_pos });
+
+                if (response[current_pos] != '$') {
+                    std.log.debug("[redis_client.sMembers] Invalid element format: expected '$' at position {d}", .{current_pos});
+                    return RedisError.InvalidResponse;
+                }
+
+                const str_len_end = std.mem.indexOf(u8, response[current_pos + 1 ..], "\r\n") orelse {
+                    std.log.debug("[redis_client.sMembers] Invalid element: no length delimiter found", .{});
+                    return RedisError.InvalidResponse;
+                };
+
+                const str_len = try std.fmt.parseInt(usize, response[current_pos + 1 .. current_pos + 1 + str_len_end], 10);
+                std.log.debug("[redis_client.sMembers] Element length: {d}", .{str_len});
+
+                current_pos += str_len_end + 3;
+                const string = response[current_pos .. current_pos + str_len];
+                std.log.debug("[redis_client.sMembers] Extracted element: '{s}'", .{string});
+
+                try strings.append(try self.allocator.dupe(u8, string));
+                current_pos += str_len + 2;
+            }
+
+            std.log.debug("[redis_client.sMembers] Successfully parsed all elements, converting to slice", .{});
             const result = try strings.toOwnedSlice();
+            std.log.debug("[redis_client.sMembers] Returning {d} elements", .{result.len});
             return result;
         }
 
+        std.log.debug("[redis_client.sMembers] Unrecognized response format, returning null", .{});
         return null;
     }
 

@@ -60,7 +60,6 @@ pub fn validateSessionBinding(session: Session, request: *jetzig.Request) !bool 
 }
 
 pub fn validateMetadata(metadata: AuditMetadata) !void {
-    //std.log.info("fn validateMetadata -- {any}", .{0});
     // Validate action details
     if (metadata.action_details) |details| {
         try validateString(details, 1024); // Max length 1024 chars

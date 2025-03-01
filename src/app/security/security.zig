@@ -1,8 +1,10 @@
 const std = @import("std");
 const jetzig = @import("jetzig");
+const builtin = @import("builtin");
 
 const redis = @import("../database/redis/redis.zig");
 const PooledRedisClient = redis.PooledRedisClient;
+const RedisClientConfig = redis.RedisClientConfig;
 
 // Internal module imports
 const types = @import("types.zig");
@@ -38,53 +40,53 @@ pub usingnamespace errors;
 
 pub const Security = struct {
     allocator: std.mem.Allocator,
+    audit: AuditLog,
     session: SessionManager,
-    storage: SessionStorage,
     tokens: TokenManager,
     rate_limiter: RateLimiter,
-    audit: AuditLog,
-    config: config.SecurityConfig,
-    redis_pool: PooledRedisClient,
 
-    pub fn init(allocator: std.mem.Allocator, security_config: SecurityConfig) !Security {
-        var storage = try SessionStorage.init(
-            allocator,
-            security_config.session,
-            security_config.redis_pool,
-        );
-
-        const audit_context = AuditContext{
-            .ip_address = null,
-            .user_agent = null,
-        };
-
-        const audit_config = AuditLogConfig{
-            .enabled = security_config.audit.enabled,
-            .high_risk_events = security_config.audit.high_risk_events,
-            .notify_admins = true,
-            .store_type = .both,
-        };
-
+    pub fn init(allocator: std.mem.Allocator, security_config: SecurityConfig, redis_pool: *PooledRedisClient) !Security {
         return Security{
             .allocator = allocator,
-            .config = security_config,
-            .session = SessionManager.init(allocator, &storage, security_config.session),
-            .storage = storage,
-            .tokens = try TokenManager.init(allocator, security_config.tokens, security_config.redis_pool),
+            .audit = AuditLog{
+                .allocator = allocator,
+                .config = AuditLogConfig{
+                    .enabled = security_config.audit.enabled,
+                    .high_risk_events = security_config.audit.high_risk_events,
+                    .notify_admins = true,
+                    .store_type = .both,
+                },
+                .context = AuditContext{
+                    .ip_address = null,
+                    .user_agent = null,
+                },
+                .redis_pool = redis_pool,
+            },
+            .session = SessionManager{
+                .allocator = allocator,
+                .config = security_config.session,
+                .redis_pool = redis_pool,
+                .storage = SessionStorage{
+                    .allocator = allocator,
+                    .storage_config = security_config.storage,
+                    .session_config = security_config.session,
+                    .redis_pool = redis_pool,
+                },
+            },
+            .tokens = TokenManager{
+                .allocator = allocator,
+                .config = security_config.tokens,
+                .redis_pool = redis_pool,
+            },
             .rate_limiter = RateLimiter{
                 .config = security_config.rate_limit,
-                .redis_pool = security_config.redis_pool,
+                .redis_pool = redis_pool,
             },
-            .audit = try AuditLog.init(allocator, audit_config, audit_context, security_config.redis_pool),
-            .redis_pool = security_config.redis_pool,
         };
     }
 
     pub fn deinit(self: *Security) void {
-        self.storage.deinit();
-        self.audit.deinit();
-        self.tokens.deinit();
-        self.session.deinit();
+        _ = self;
     }
 
     // fn handleValidationError(
@@ -205,77 +207,75 @@ pub const Security = struct {
     // }
 
     pub fn authenticate(self: *Security, request: *jetzig.Request, credentials: Credentials) !AuthResult {
+        std.log.debug("[security.authenticate] Starting authentication", .{});
+
         const identifier = try self.getIdentifier(request);
+        std.log.debug("[security.authenticate] Identifier: '{s}'", .{identifier});
 
         // Validate request metadata
         if (request.headers.get("User-Agent")) |ua| {
+            std.log.debug("[security.authenticate] Validating User-Agent: '{s}'", .{ua});
             if (!validation.isValidUserAgent(ua)) {
-                // try self.handleValidationError(
-                //     validation.ValidationError.InvalidUserAgent,
-                //     .login_failed,
-                //     null,
-                //     request,
-                //     "authentication",
-                // );
+                std.log.debug("[security.authenticate] Invalid User-Agent, returning ValidationError", .{});
                 return SecurityError.ValidationError;
             }
+        } else {
+            std.log.debug("[security.authenticate] No User-Agent header present", .{});
         }
 
         // 1. Rate limit check
+        std.log.debug("[security.authenticate] Checking rate limit for '{s}'", .{identifier});
         const rate_limit_info = try self.rate_limiter.check(identifier);
-        //Check if account is locked
+        std.log.debug("[security.authenticate] Rate limit info - remaining: {d}, is_locked: {}", .{ rate_limit_info.remaining, rate_limit_info.is_locked });
+
+        // Check if account is locked
         if (rate_limit_info.is_locked) {
-            // try self.handleValidationError(
-            //     error.AccountLocked,
-            //     .account_locked,
-            //     null,
-            //     request,
-            //     "account_locked",
-            // );
+            std.log.debug("[security.authenticate] Account locked, returning AccountLocked", .{});
             return SecurityError.AccountLocked;
         }
 
         // Check if rate limit is exceeded
         if (rate_limit_info.remaining == 0) {
-            // try self.handleValidationError(
-            //     error.RateLimitExceeded,
-            //     .rate_limit_exceeded,
-            //     null,
-            //     request,
-            //     "rate_limit",
-            // );
+            std.log.debug("[security.authenticate] Rate limit exceeded, returning RateLimitExceeded", .{});
             return SecurityError.RateLimitExceeded;
         }
 
         // 2. Basic auth validation
-        const auth_result = self.validateCredentials(request, credentials) catch {
+        std.log.debug("[security.authenticate] Validating credentials", .{});
+        const auth_result = self.validateCredentials(request, credentials, identifier) catch {
+            std.log.debug("[security.authenticate] Invalid credentials, incrementing rate limit", .{});
             try self.rate_limiter.increment(identifier);
             try self.audit.log(.login_failed, null, .{
                 .action_details = "Invalid credentials",
                 .ip_address = identifier,
             });
+            std.log.debug("[security.authenticate] Returning InvalidCredentials", .{});
             return SecurityError.InvalidCredentials;
         };
+        std.log.debug("[security.authenticate] Credentials validated, user ID: {d}", .{auth_result.user.id});
 
         // 3. Create session
-        std.log.info("[security.authenticate] -- 3. Create session: {any}", .{0});
-        const session = try self.session.create(auth_result.user);
+        std.log.debug("[security.authenticate] Creating session for user ID: {d}", .{auth_result.user.id});
+        const session = try self.session.create(auth_result.user, request);
+        std.log.debug("[security.authenticate] Session created", .{});
 
         // 4. Generate tokens
-        std.log.info("[security.authenticate] -- 4. Generate tokens: {any}", .{0});
+        std.log.debug("[security.authenticate] Generating tokens", .{});
         const tokens = try self.tokens.generate(session);
+        std.log.debug("[security.authenticate] Tokens generated", .{});
 
         // 5. Log successful authentication
-        std.log.info("[security.authenticate] -- 5. Log successful authentication: {any}", .{0});
+        std.log.debug("[security.authenticate] Logging successful login", .{});
         try self.audit.log(.login_success, auth_result.user.id, .{
             .action_details = "Successful login",
             .ip_address = identifier,
         });
 
         // 6. Reset rate limit counter on success
-        std.log.info("[security.authenticate] -- 6. Reset rate limit counter on success: {any}", .{0});
+        std.log.debug("[security.authenticate] Resetting rate limit for '{s}'", .{identifier});
         try self.rate_limiter.reset(identifier);
 
+        std.log.debug("[security.authenticate] Authentication successful", .{});
         return AuthResult{
             .session = session,
             .user = auth_result.user,
@@ -283,28 +283,32 @@ pub const Security = struct {
         };
     }
 
-    fn validateCredentials(self: *Security, request: *jetzig.Request, credentials: Credentials) !struct { user: User } {
+    fn validateCredentials(self: *Security, request: *jetzig.Request, credentials: Credentials, identifier: []const u8) !struct { user: User } {
+        std.log.debug("[security.validateCredentials] Starting credential validation", .{});
+
         // Validate input parameters first
         if (credentials.email.len == 0) {
+            std.log.debug("[security.validateCredentials] Empty email provided, returning InvalidInput", .{});
             return SecurityError.InvalidInput;
         }
 
         if (credentials.password.len == 0) {
+            std.log.debug("[security.validateCredentials] Empty password provided, returning InvalidInput", .{});
             return SecurityError.InvalidInput;
         }
 
-        //std.log.info("fn validateCredentials -- 1: {any}", .{credentials.email});
+        std.log.debug("[security.validateCredentials] Input validation passed", .{});
+
         // 1. Database Query using jetzig.database.Query and findBy
+        std.log.debug("[security.validateCredentials] Building database query for email: '{s}'", .{credentials.email});
         const query = jetzig.database.Query(.User)
             .include(.user_roles, .{
             .include = .{.role},
         })
             .findBy(.{ .email = credentials.email });
 
-        // Add audit context for the lookup attempt
-        const identifier = try self.getIdentifier(request);
-
         // Create JSON for the custom data properly
+        std.log.debug("[security.validateCredentials] Creating audit log JSON data", .{});
         const email_json = try std.fmt.allocPrint(
             self.allocator,
             \\{{ "email": "{s}" }}
@@ -314,6 +318,7 @@ pub const Security = struct {
         defer self.allocator.free(email_json);
 
         // Parse the JSON string into a json.Value
+        std.log.debug("[security.validateCredentials] Parsing JSON for audit log", .{});
         const custom_data = try std.json.parseFromSlice(
             std.json.Value,
             self.allocator,
@@ -322,6 +327,7 @@ pub const Security = struct {
         );
         defer custom_data.deinit();
 
+        std.log.debug("[security.validateCredentials] Logging credential check audit event", .{});
         try self.audit.log(.credential_check, null, .{
             .action_details = "Credentials verification attempt",
             .ip_address = identifier,
@@ -329,29 +335,31 @@ pub const Security = struct {
         });
 
         // Execute query with proper error handling
+        std.log.debug("[security.validateCredentials] Executing database query", .{});
         const user = request.repo.execute(query) catch |err| {
-            std.log.err("Database error during credential verification: {s}", .{@errorName(err)});
+            std.log.err("[security.validateCredentials] Database error during credential verification: {}", .{err});
             return SecurityError.DatabaseError;
         } orelse {
             // Don't reveal if user exists or not to prevent enumeration attacks
-            std.log.info("User not found: {s}", .{credentials.email});
+            std.log.info("[security.validateCredentials] User not found: {s}", .{credentials.email});
             return SecurityError.InvalidCredentials;
         };
 
-        std.log.info("User found: id={d}, username={s}, email={s}", .{
+        std.log.info("[security.validateCredentials] User found: id={d}, username={s}, email={s}", .{
             user.id,
             user.username,
             user.email,
         });
-        //std.log.info("User Found: {any}", .{user});
 
-        //std.log.info("fn validateCredentials -- Account status verification: {any}", .{user.username});
         // 2. Account status verification
+        std.log.debug("[security.validateCredentials] Checking account status", .{});
         if (user.is_banned != null and user.is_banned.?) {
+            std.log.debug("[security.validateCredentials] Account is banned, returning AccountLocked", .{});
             try self.audit.log(.access_denied, @intCast(user.id), .{
                 .action_details = "Login attempt on banned account",
                 .ip_address = identifier,
                 .custom_data = if (user.ban_reason != null) blk: {
+                    std.log.debug("[security.validateCredentials] Including ban reason in audit log", .{});
                     const reason_json = try std.fmt.allocPrint(
                         self.allocator,
                         \\{{ "ban_reason": "{s}" }}
@@ -372,6 +380,7 @@ pub const Security = struct {
         }
 
         if (user.is_active != null and !user.is_active.?) {
+            std.log.debug("[security.validateCredentials] Account is inactive, returning AccountInactive", .{});
             try self.audit.log(.access_denied, @intCast(user.id), .{
                 .action_details = "Login attempt on inactive account",
                 .ip_address = identifier,
@@ -379,27 +388,39 @@ pub const Security = struct {
             return SecurityError.AccountInactive;
         }
 
-        //std.log.info("Password Hash Verification: {any}", .{user});
         // 3. Password Hash Verification
+        std.log.debug("[security.validateCredentials] Verifying password hash", .{});
         const is_password_valid = jetzig.auth.verifyPassword(self.allocator, user.password_hash, credentials.password) catch |err| {
-            std.log.err("Password verification error: {}", .{err});
+            std.log.err("[security.validateCredentials] Password verification error: {}", .{err});
             return SecurityError.InternalError;
         };
 
         if (!is_password_valid) {
+            std.log.debug("[security.validateCredentials] Password verification failed, returning InvalidCredentials", .{});
             try self.audit.log(.login_failed, @intCast(user.id), .{
                 .action_details = "Invalid password",
                 .ip_address = identifier,
             });
             return SecurityError.InvalidCredentials;
         }
+        std.log.debug("[security.validateCredentials] Password verification successful", .{});
 
         // 4. User last login info
+        std.log.debug("[security.validateCredentials] Getting user agent information", .{});
         const user_agent = request.headers.get("User-Agent") orelse "";
-        //std.log.info("fn validateCredentials -- user_agent: {any}", .{0});
+        std.log.debug("[security.validateCredentials] User agent: '{s}'", .{user_agent});
 
         // 5. Create and Return User struct with updated information
-        //
+        std.log.debug("[security.validateCredentials] Creating user record with updated login information", .{});
+
+        const device_id = request.headers.get("X-Device-ID");
+        if (device_id) |id| {
+            std.log.debug("[security.validateCredentials] Device ID provided: '{s}'", .{id});
+        } else {
+            std.log.debug("[security.validateCredentials] No device ID provided", .{});
+        }
+
+        std.log.debug("[security.validateCredentials] Validation successful for user ID: {d}", .{user.id});
         return .{
             .user = User{
                 .id = @intCast(user.id),
@@ -409,23 +430,20 @@ pub const Security = struct {
                 .is_banned = user.is_banned,
                 .last_ip = identifier,
                 .last_user_agent = user_agent,
-                .device_id = request.headers.get("X-Device-ID"),
+                .device_id = device_id,
                 .last_login_at = std.time.timestamp(),
             },
         };
     }
 
     pub fn validateSession(self: *Security, request: *jetzig.Request) !Session {
-        const token = self.getAuthToken(request) orelse return SecurityError.UnauthorizedAccess;
+        // Get the session token from the cookie
+        const token = self.session.getSessionTokenFromCookie(request) orelse
+            return SecurityError.UnauthorizedAccess;
+
+        //const token = self.getAuthToken(request) orelse return SecurityError.UnauthorizedAccess;
 
         const session = try self.session.validate(token) catch |err| {
-            // try self.handleValidationError(
-            //     err,
-            //     .session_invalidated,
-            //     null,
-            //     request,
-            //     "session_validation",
-            // );
             return err;
         };
 
@@ -445,8 +463,17 @@ pub const Security = struct {
         return session;
     }
 
-    pub fn logout(self: *Security, request: *jetzig.Request) !void {
-        if (self.getAuthToken(request)) |token| {
+    pub fn logout(self: *Security, request: *jetzig.Request, response: *jetzig.Response) !void {
+        // if (self.getAuthToken(request)) |token| {
+        //     try self.session.invalidate(token);
+        //     try self.tokens.invalidateToken(token);
+        //     try self.audit.log(.logout, null, .{
+        //         .action_details = "User logout",
+        //         .ip_address = try self.getIdentifier(request),
+        //     });
+        // }
+
+        if (self.session.getSessionTokenFromCookie(request)) |token| {
             try self.session.invalidate(token);
             try self.tokens.invalidateToken(token);
             try self.audit.log(.logout, null, .{
@@ -454,11 +481,20 @@ pub const Security = struct {
                 .ip_address = try self.getIdentifier(request),
             });
         }
+        // Clear Cookie
+        try self.session.clearSessionCookie(response);
     }
 
     pub fn getIdentifier(self: *Security, request: *jetzig.Request) ![]const u8 {
         _ = self;
-        return request.headers.get("X-Forwarded-For") orelse "unkown";
+        const ip = request.headers.get("X-Forwarded-For") orelse {
+            if (builtin.mode == .Debug) {
+                return "localhost"; // Local dev fallback
+            } else {
+                return "unknown";
+            }
+        };
+        return ip;
     }
 
     fn getAuthToken(self: *Security, request: *jetzig.Request) ?[]const u8 {
@@ -468,10 +504,5 @@ pub const Security = struct {
             return auth_header[7..];
         }
         return null;
-    }
-
-    pub fn cleanup(self: *Security) !void {
-        try self.storage.cleanupExpiredSessions();
-        // Add other cleanup tasks as needed
     }
 };

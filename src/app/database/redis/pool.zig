@@ -1,58 +1,17 @@
 const std = @import("std");
 const types = @import("types.zig");
+const RedisClient = @import("client.zig").RedisClient;
 
 pub const RedisError = types.RedisError;
 pub const RedisClientConfig = types.RedisClientConfig;
-pub const RedisClient = @import("client.zig").RedisClient;
-
-pub const BufferPool = struct {
-    pool: std.ArrayList(std.ArrayList(u8)),
-    allocator: std.mem.Allocator,
-    mutex: std.Thread.Mutex,
-
-    pub fn init(allocator: std.mem.Allocator) BufferPool {
-        return .{
-            .pool = std.ArrayList(std.ArrayList(u8)).init(allocator),
-            .allocator = allocator,
-            .mutex = .{},
-        };
-    }
-
-    pub fn acquire(self: *BufferPool, initial_size: usize) !*std.ArrayList(u8) {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        if (self.pool.items.len == 0) {
-            var buffer = try std.ArrayList(u8).initCapacity(self.allocator, initial_size);
-            return &buffer;
-        }
-
-        return &self.pool.pop();
-    }
-
-    pub fn release(self: *BufferPool, buffer: *std.ArrayList(u8)) !void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        buffer.clearRetainingCapacity();
-        try self.pool.append(buffer.*);
-    }
-
-    pub fn deinit(self: *BufferPool) void {
-        for (self.pool.items) |*buffer| {
-            buffer.deinit();
-        }
-        self.pool.deinit();
-    }
-};
 
 pub const PooledRedisClient = struct {
     allocator: std.mem.Allocator,
     config: RedisClientConfig,
-    connections: std.ArrayList(RedisClient),
-    available_connections: std.ArrayList(usize),
+    available: std.ArrayList(*RedisClient), // Available (idle) clients
+    all_clients: std.ArrayList(*RedisClient), // All clients (active + available)
     mutex: std.Thread.Mutex,
-    buffer_pool: BufferPool,
+    condition: std.Thread.Condition, // For waiting on available connections
     last_cleanup: i64,
 
     const Self = @This();
@@ -61,123 +20,181 @@ pub const PooledRedisClient = struct {
         var pool = Self{
             .allocator = allocator,
             .config = config,
-            .connections = std.ArrayList(RedisClient).init(allocator),
-            .available_connections = std.ArrayList(usize).init(allocator),
+            .available = std.ArrayList(*RedisClient).init(allocator),
+            .all_clients = std.ArrayList(*RedisClient).init(allocator),
             .mutex = .{},
-            .buffer_pool = BufferPool.init(allocator),
+            .condition = .{},
             .last_cleanup = std.time.milliTimestamp(),
         };
         errdefer pool.deinit();
 
-        try pool.connections.ensureTotalCapacity(config.max_connections);
-        try pool.available_connections.ensureTotalCapacity(config.max_connections);
+        try pool.available.ensureTotalCapacity(config.max_connections);
+        try pool.all_clients.ensureTotalCapacity(config.max_connections);
 
-        // Initialize with minimum connections
-        const min_connections = @min(3, config.max_connections);
-        var i: usize = 0;
-        while (i < min_connections) : (i += 1) {
-            try pool.createNewConnection();
+        const min_connections = @min(config.min_connections, config.max_connections);
+        for (0..min_connections) |_| {
+            const client = try pool.createConnection();
+            try pool.available.append(client);
+            try pool.all_clients.append(client);
         }
 
         return pool;
     }
 
-    fn createNewConnection(self: *Self) !void {
-        var client = try RedisClient.connect(self.allocator, self.config);
-        errdefer client.disconnect();
-
-        if (self.config.password) |pass| {
-            try client.auth(pass);
-        }
-        if (self.config.database) |db| {
-            try client.select(db);
-        }
-
-        try self.connections.append(client);
-        try self.available_connections.append(self.connections.items.len - 1);
-    }
-
     pub fn deinit(self: *Self) void {
-        for (self.connections.items) |*client| {
-            client.disconnect();
-        }
-        self.connections.deinit();
-        self.available_connections.deinit();
-        self.buffer_pool.deinit();
-    }
-
-    fn cleanupConnections(self: *Self) !void {
-        const now = std.time.milliTimestamp();
-        if (now - self.last_cleanup < self.config.cleanup_interval_ms) {
-            return;
-        }
-
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        var i: usize = 0;
-        while (i < self.connections.items.len) {
-            var client = &self.connections.items[i];
-            if (!client.isHealthy()) {
-                client.disconnect();
-                _ = self.connections.swapRemove(i);
-                // Update available_connections indices
-                for (self.available_connections.items) |*idx| {
-                    if (idx.* == i) {
-                        _ = self.available_connections.swapRemove(i);
-                    } else if (idx.* > i) {
-                        idx.* -= 1;
-                    }
-                }
-                continue;
-            }
-            i += 1;
+        for (self.all_clients.items) |client| {
+            client.disconnect();
+            self.allocator.destroy(client);
         }
+        self.available.deinit();
+        self.all_clients.deinit();
+    }
 
-        self.last_cleanup = now;
+    fn createConnection(self: *Self) RedisError!*RedisClient {
+        var client_ptr = try self.allocator.create(RedisClient);
+        errdefer self.allocator.destroy(client_ptr);
+
+        client_ptr.* = try RedisClient.connect(self.allocator, self.config);
+
+        if (self.config.password) |password| {
+            try client_ptr.auth(password);
+        }
+        if (self.config.database) |db| {
+            try client_ptr.select(db);
+        }
+        return client_ptr;
     }
 
     pub fn acquire(self: *Self) !*RedisClient {
-        try self.cleanupConnections();
+        // Perform a potential cleanup operation based on time intervals
+        try self.maybeCleanupConnections();
 
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        // Check available connections
-        while (self.available_connections.items.len > 0) {
-            const index_opt = self.available_connections.pop();
-            const index = index_opt orelse break; // Handle the optional value
-            var client = &self.connections.items[index];
-
-            if (client.isHealthy()) {
-                return client;
+        while (true) {
+            if (self.available.items.len > 0) {
+                const client = self.available.pop() orelse unreachable;
+                if (client.isHealthy()) {
+                    return client;
+                }
+                client.disconnect();
+                self.allocator.destroy(client);
+                _ = self.removeFromAllClients(client);
+                continue;
             }
 
-            client.disconnect();
-            _ = self.connections.swapRemove(index);
-        }
+            if (self.all_clients.items.len < self.config.max_connections) {
+                const new_client = try self.createConnection();
+                try self.all_clients.append(new_client);
+                return new_client;
+            }
 
-        // Create new connection if pool not full
-        if (self.connections.items.len < self.config.max_connections) {
-            try self.createNewConnection();
-            return &self.connections.items[self.connections.items.len - 1];
+            const timeout_ns = self.config.timeout_ms * std.time.ns_per_ms;
+            self.condition.timedWait(&self.mutex, timeout_ns) catch |err| switch (err) {
+                error.Timeout => return RedisError.PoolExhausted,
+                else => |e| return e,
+            };
         }
-
-        return RedisError.PoolExhausted;
     }
 
-    pub fn release(self: *Self, client: *RedisClient) !void {
+    pub fn release(self: *Self, client: *RedisClient) void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        for (0..self.connections.items.len) |i| {
-            if (&self.connections.items[i] == client) {
-                try self.available_connections.append(i);
-                client.last_used_timestamp = std.time.milliTimestamp();
-                return;
-            }
+        client.reconnect_attempts = 0;
+        client.last_used_timestamp = std.time.milliTimestamp();
+
+        if (!client.isHealthy()) {
+            client.disconnect();
+            self.allocator.destroy(client);
+            _ = self.removeFromAllClients(client);
+            return;
         }
 
-        return error.InvalidArgument;
+        if (self.available.items.len < self.config.max_connections) {
+            self.available.append(client) catch {
+                client.disconnect();
+                self.allocator.destroy(client);
+                _ = self.removeFromAllClients(client);
+            };
+            self.condition.signal();
+        } else {
+            client.disconnect();
+            self.allocator.destroy(client);
+            _ = self.removeFromAllClients(client);
+        }
+    }
+
+    fn maybeCleanupConnections(self: *Self) !void {
+        // Simple safety check before accessing config fields
+        const now = std.time.milliTimestamp();
+        const cleanup_interval = @as(i64, 30000); // Default 30 second interval as fallback
+
+        var should_cleanup = false;
+
+        // Try to safely access config, but provide a fallback
+        const interval = if (@hasField(@TypeOf(self.config), "cleanup_interval_ms"))
+            self.config.cleanup_interval_ms
+        else
+            cleanup_interval;
+
+        // Only clean up if interval > 0 and enough time has passed
+        if (interval > 0 and now - self.last_cleanup >= interval) {
+            should_cleanup = true;
+        }
+
+        if (should_cleanup) {
+            try self.cleanupConnections();
+        }
+    }
+
+    fn cleanupConnections(self: *Self) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        // Mark the cleanup time first to prevent concurrent cleanups
+        self.last_cleanup = std.time.milliTimestamp();
+
+        // Safety check for empty list
+        if (self.available.items.len == 0) {
+            return;
+        }
+
+        // Use a reverse loop for safe removal
+        var i: usize = self.available.items.len;
+        while (i > 0) {
+            i -= 1;
+            if (i >= self.available.items.len) continue; // Extra safety check
+
+            const client = self.available.items[i];
+            if (!client.isHealthy()) {
+                // Remove from available list safely
+                const removed = self.available.orderedRemove(i);
+
+                // Clean up the client
+                removed.disconnect();
+
+                // Remove from all_clients list
+                _ = self.removeFromAllClients(removed);
+
+                // Free the memory
+                self.allocator.destroy(removed);
+            }
+        }
+    }
+
+    // Safely remove a client from the all_clients list
+    fn removeFromAllClients(self: *Self, client: *RedisClient) bool {
+        for (self.all_clients.items, 0..) |item, i| {
+            if (item == client) {
+                _ = self.all_clients.swapRemove(i);
+                return true;
+            }
+        }
+        return false;
     }
 };

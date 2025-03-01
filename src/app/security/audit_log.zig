@@ -52,20 +52,7 @@ pub const AuditLog = struct {
     allocator: std.mem.Allocator,
     config: AuditLogConfig,
     context: AuditContext,
-    redis_pool: PooledRedisClient,
-
-    pub fn init(allocator: std.mem.Allocator, config: AuditLogConfig, context: AuditContext, redis_pool: PooledRedisClient) !AuditLog {
-        return AuditLog{
-            .allocator = allocator,
-            .config = config,
-            .context = context,
-            .redis_pool = redis_pool,
-        };
-    }
-
-    pub fn deinit(self: *AuditLog) void {
-        _ = self;
-    }
+    redis_pool: *PooledRedisClient,
 
     fn isHighRiskEvent(self: *const AuditLog, event: SecurityEvent) bool {
         for (self.config.high_risk_events) |high_risk| {
@@ -78,9 +65,7 @@ pub const AuditLog = struct {
         if (!self.config.notify_admins) return;
 
         var client = try self.redis_pool.acquire();
-        defer self.redis_pool.release(client) catch |err| {
-            std.log.err("Failed to release Redis client: {}", .{err});
-        };
+        defer self.redis_pool.release(client);
 
         // Log high-risk event notification
         const notification_key = try std.fmt.allocPrint(self.allocator, "admin:notifications:{}:{}", .{ entry.timestamp, if (entry.user_id) |id| id else 0 });
@@ -121,9 +106,7 @@ pub const AuditLog = struct {
         }
 
         var client = try self.redis_pool.acquire();
-        defer self.redis_pool.release(client) catch |err| {
-            std.log.err("Failed to release Redis client: {}", .{err});
-        };
+        defer self.redis_pool.release(client);
 
         const entry = AuditEntry{
             .timestamp = std.time.timestamp(),

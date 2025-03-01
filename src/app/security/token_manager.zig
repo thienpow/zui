@@ -19,21 +19,8 @@ pub const TokenError = error{
 
 pub const TokenManager = struct {
     allocator: std.mem.Allocator,
-    token_config: TokenConfig,
-    redis_pool: PooledRedisClient,
-
-    pub fn init(allocator: std.mem.Allocator, token_config: TokenConfig, redis_pool: PooledRedisClient) !TokenManager {
-        return .{
-            .allocator = allocator,
-            .token_config = token_config,
-            .redis_pool = redis_pool,
-        };
-    }
-
-    pub fn deinit(self: *TokenManager) void {
-        // Currently no resources to clean up
-        _ = self;
-    }
+    config: TokenConfig,
+    redis_pool: *PooledRedisClient,
 
     fn generateToken(self: *TokenManager) ![]const u8 {
         var random_bytes: [48]u8 = undefined;
@@ -51,9 +38,7 @@ pub const TokenManager = struct {
         const token = try self.generateToken();
 
         var client = try self.redis_pool.acquire();
-        defer self.redis_pool.release(client) catch |err| {
-            std.log.err("Failed to release Redis client: {}", .{err});
-        };
+        defer self.redis_pool.release(client);
 
         const key = try std.fmt.allocPrint(self.allocator, "access_token:{s}", .{token});
         defer self.allocator.free(key);
@@ -61,7 +46,7 @@ pub const TokenManager = struct {
         const value = try std.json.stringifyAlloc(self.allocator, session, .{});
         defer self.allocator.free(value);
 
-        client.setEx(key, value, self.token_config.access_token_ttl) catch |err| {
+        client.setEx(key, value, self.config.access_token_ttl) catch |err| {
             return switch (err) {
                 redis.RedisError.ConnectionFailed => TokenError.StorageError,
                 redis.RedisError.CommandFailed => TokenError.StorageError,
@@ -76,9 +61,7 @@ pub const TokenManager = struct {
         const token = try self.generateToken();
 
         var client = try self.redis_pool.acquire();
-        defer self.redis_pool.release(client) catch |err| {
-            std.log.err("Failed to release Redis client: {}", .{err});
-        };
+        defer self.redis_pool.release(client);
 
         const key = try std.fmt.allocPrint(self.allocator, "refresh_token:{s}", .{token});
         defer self.allocator.free(key);
@@ -86,7 +69,7 @@ pub const TokenManager = struct {
         const value = try std.json.stringifyAlloc(self.allocator, session, .{});
         defer self.allocator.free(value);
 
-        client.setEx(key, value, self.token_config.refresh_token_ttl) catch |err| {
+        client.setEx(key, value, self.config.refresh_token_ttl) catch |err| {
             return switch (err) {
                 redis.RedisError.ConnectionFailed => TokenError.StorageError,
                 redis.RedisError.CommandFailed => TokenError.StorageError,
@@ -99,9 +82,7 @@ pub const TokenManager = struct {
 
     pub fn invalidateToken(self: *TokenManager, token: []const u8) !void {
         var client = try self.redis_pool.acquire();
-        defer self.redis_pool.release(client) catch |err| {
-            std.log.err("Failed to release Redis client: {}", .{err});
-        };
+        defer self.redis_pool.release(client);
 
         const access_key = try std.fmt.allocPrint(self.allocator, "access_token:{s}", .{token});
         defer self.allocator.free(access_key);
@@ -157,9 +138,7 @@ pub const TokenManager = struct {
 
     fn validateRefreshToken(self: *TokenManager, token: []const u8) !Session {
         var client = try self.redis_pool.acquire();
-        defer self.redis_pool.release(client) catch |err| {
-            std.log.err("Failed to release Redis client: {}", .{err});
-        };
+        defer self.redis_pool.release(client);
 
         const key = try std.fmt.allocPrint(self.allocator, "refresh_token:{s}", .{token});
         defer self.allocator.free(key);
@@ -175,9 +154,7 @@ pub const TokenManager = struct {
 
     pub fn validateAccessToken(self: *TokenManager, token: []const u8) !Session {
         var client = try self.redis_pool.acquire();
-        defer self.redis_pool.release(client) catch |err| {
-            std.log.err("Failed to release Redis client: {}", .{err});
-        };
+        defer self.redis_pool.release(client);
 
         const key = try std.fmt.allocPrint(self.allocator, "access_token:{s}", .{token});
         defer self.allocator.free(key);
@@ -193,9 +170,7 @@ pub const TokenManager = struct {
 
     pub fn isRevoked(self: *TokenManager, token: []const u8) !bool {
         var client = try self.redis_pool.acquire();
-        defer self.redis_pool.release(client) catch |err| {
-            std.log.err("Failed to release Redis client: {}", .{err});
-        };
+        defer self.redis_pool.release(client);
 
         const key = try std.fmt.allocPrint(self.allocator, "revoked_token:{s}", .{token});
         defer self.allocator.free(key);

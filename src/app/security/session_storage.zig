@@ -5,6 +5,7 @@ const config = @import("config.zig");
 
 const Session = types.Session;
 const SessionConfig = config.SessionConfig;
+const StorageConfig = config.StorageConfig;
 const PooledRedisClient = redis.PooledRedisClient;
 
 pub const StorageType = enum {
@@ -15,29 +16,14 @@ pub const StorageType = enum {
 
 pub const SessionStorage = struct {
     allocator: std.mem.Allocator,
-    redis_pool: PooledRedisClient,
     session_config: SessionConfig,
-
-    pub fn init(allocator: std.mem.Allocator, session_config: SessionConfig, redis_pool: PooledRedisClient) !SessionStorage {
-        return .{
-            .allocator = allocator,
-            .redis_pool = redis_pool,
-            //.db_pool = db,
-            .session_config = session_config,
-        };
-    }
-
-    pub fn deinit(self: *SessionStorage) void {
-        // Cleanup any allocated resources
-        _ = self;
-    }
+    storage_config: StorageConfig,
+    redis_pool: *PooledRedisClient,
 
     pub fn getSession(self: *SessionStorage, token: []const u8) !?Session {
         std.log.info("[session_storage.getSession] token={s}", .{token});
         var client = try self.redis_pool.acquire();
-        defer self.redis_pool.release(client) catch |err| {
-            std.log.err("Failed to release Redis client in getSession: {}", .{err});
-        };
+        defer self.redis_pool.release(client);
 
         const key = try std.fmt.allocPrint(self.allocator, "session:{s}", .{token});
         defer self.allocator.free(key);
@@ -103,9 +89,7 @@ pub const SessionStorage = struct {
 
     pub fn invalidateSession(self: *SessionStorage, session_id: []const u8) !void {
         var client = try self.redis_pool.acquire();
-        defer self.redis_pool.release(client) catch |err| {
-            std.log.err("Failed to release Redis client: {}", .{err});
-        };
+        defer self.redis_pool.release(client);
 
         const key = try std.fmt.allocPrint(self.allocator, "session:{s}", .{session_id});
         defer self.allocator.free(key);
@@ -115,9 +99,7 @@ pub const SessionStorage = struct {
 
     pub fn saveSession(self: *SessionStorage, session: Session) !void {
         var client = try self.redis_pool.acquire();
-        defer self.redis_pool.release(client) catch |err| {
-            std.log.err("Failed to release Redis client: {}", .{err});
-        };
+        defer self.redis_pool.release(client);
 
         const key = try std.fmt.allocPrint(self.allocator, "session:{s}", .{session.id});
         defer self.allocator.free(key);
@@ -143,9 +125,7 @@ pub const SessionStorage = struct {
 
     pub fn cleanupExpiredSessions(self: *SessionStorage) !void {
         var client = try self.redis_pool.acquire();
-        defer self.redis_pool.release(client) catch |err| {
-            std.log.err("Failed to release Redis client: {}", .{err});
-        };
+        defer self.redis_pool.release(client);
 
         // Use Redis SCAN to iterate over session keys
         var cursor: u64 = 0;
@@ -172,33 +152,25 @@ pub const SessionStorage = struct {
         var sessions = std.ArrayList(Session).init(self.allocator);
         errdefer sessions.deinit();
 
-        std.log.info("[session_storage.getUserActiveSessions] -- before redis_pool.acquire {any}", .{0});
         var client = try self.redis_pool.acquire();
-        defer self.redis_pool.release(client) catch |err| {
-            std.log.err("Failed to release Redis client: {}", .{err});
-        };
+        defer self.redis_pool.release(client);
 
         const user_key = try std.fmt.allocPrint(self.allocator, "user:{}:sessions", .{user_id});
         defer self.allocator.free(user_key);
 
-        std.log.info("[session_storage.getUserActiveSessions] -- before sMember {any}", .{0});
         if (try client.sMembers(user_key)) |session_ids| {
-            std.log.info("[session_storage.getUserActiveSessions] -- after sMember {any}", .{0});
             for (session_ids) |session_id| {
                 if (try self.getSession(session_id)) |session| {
                     try sessions.append(session);
                 }
             }
         }
-        std.log.info("session_storage.getUserActiveSessions -- after sMembers {any}", .{1});
         return sessions.toOwnedSlice(); // Caller needs to free this
     }
 
     fn removeFromRedis(self: *SessionStorage, session_id: []const u8) !void {
         var client = try self.redis_pool.acquire();
-        defer self.redis_pool.release(client) catch |err| {
-            std.log.err("Failed to release Redis client: {}", .{err});
-        };
+        defer self.redis_pool.release(client);
 
         const key = try std.fmt.allocPrint(self.allocator, "session:{s}", .{session_id});
         defer self.allocator.free(key);
