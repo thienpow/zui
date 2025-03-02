@@ -8,12 +8,6 @@ const SessionConfig = config.SessionConfig;
 const StorageConfig = config.StorageConfig;
 const PooledRedisClient = redis.PooledRedisClient;
 
-pub const StorageType = enum {
-    redis,
-    database,
-    both,
-};
-
 pub const SessionStorage = struct {
     allocator: std.mem.Allocator,
     session_config: SessionConfig,

@@ -73,6 +73,12 @@ pub const ErrorDetails = struct {
     category: []const u8,
 };
 
+pub const StorageType = enum {
+    redis,
+    database,
+    both,
+};
+
 pub const Severity = enum {
     low,
     medium,

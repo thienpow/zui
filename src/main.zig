@@ -115,6 +115,8 @@ pub fn main() !void {
                 .password_changed,
                 .mfa_disabled,
             },
+            .notify_admins = true,
+            .store_type = .both,
             .log_retention_days = 90,
         },
     };

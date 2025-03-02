@@ -25,7 +25,7 @@ const SecurityError = errors.SecurityError;
 const audit_log = @import("audit_log.zig");
 const AuditContext = audit_log.AuditContext;
 const AuditLog = audit_log.AuditLog;
-const AuditLogConfig = audit_log.AuditLogConfig;
+const AuditLogConfig = config.AuditLogConfig;
 
 const SessionManager = @import("session_manager.zig").SessionManager;
 const SessionStorage = @import("session_storage.zig").SessionStorage;
@@ -50,12 +50,7 @@ pub const Security = struct {
             .allocator = allocator,
             .audit = AuditLog{
                 .allocator = allocator,
-                .config = AuditLogConfig{
-                    .enabled = security_config.audit.enabled,
-                    .high_risk_events = security_config.audit.high_risk_events,
-                    .notify_admins = true,
-                    .store_type = .both,
-                },
+                .config = security_config.audit,
                 .context = AuditContext{
                     .ip_address = null,
                     .user_agent = null,

@@ -4,14 +4,14 @@ const redis = @import("../database/redis/redis.zig");
 
 const SecurityEvent = types.SecurityEvent;
 const PooledRedisClient = redis.PooledRedisClient;
-const StorageType = SessionStorage.StorageType;
+const StorageType = types.StorageType;
 
 pub const SecurityConfig = struct {
     session: SessionConfig,
     storage: StorageConfig,
     tokens: TokenConfig,
     rate_limit: RateLimitConfig,
-    audit: AuditConfig,
+    audit: AuditLogConfig,
 
     pub fn validate(self: SecurityConfig) !void {
         if (self.session.session_ttl <= 0) return error.InvalidSessionTTL;
@@ -31,7 +31,7 @@ pub const SessionConfig = struct {
 };
 
 pub const StorageConfig = struct {
-    storage_type: SessionStorage.StorageType = .both,
+    storage_type: StorageType = StorageType.both,
     cleanup_batch_size: u32 = 1000,
 };
 
@@ -47,12 +47,14 @@ pub const RateLimitConfig = struct {
     lockout_duration: u32 = 900, // 15 minutes
 };
 
-pub const AuditConfig = struct {
+pub const AuditLogConfig = struct {
     enabled: bool = true,
     high_risk_events: []const SecurityEvent = &.{
         .login_failed,
         .password_changed,
         .mfa_disabled,
     },
+    notify_admins: bool = true,
+    store_type: StorageType = StorageType.both,
     log_retention_days: u32 = 90,
 };

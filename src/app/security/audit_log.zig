@@ -1,10 +1,13 @@
 const std = @import("std");
 const redis = @import("../database/redis/redis.zig");
 const types = @import("types.zig");
+const config = @import("config.zig");
+
 const validation = @import("validation.zig");
 
 const SecurityEvent = types.SecurityEvent;
 const PooledRedisClient = redis.PooledRedisClient;
+const AuditLogConfig = config.AuditLogConfig;
 
 pub const AuditMetadata = struct {
     // Common audit metadata fields
@@ -31,21 +34,6 @@ pub const AuditEntry = struct {
 pub const AuditContext = struct {
     ip_address: ?[]const u8,
     user_agent: ?[]const u8,
-};
-
-pub const AuditLogConfig = struct {
-    enabled: bool = true,
-    high_risk_events: []const SecurityEvent = &.{
-        .login_failed,
-        .password_changed,
-        .mfa_disabled,
-    },
-    notify_admins: bool = true,
-    store_type: enum {
-        redis,
-        database,
-        both,
-    } = .both,
 };
 
 pub const AuditLog = struct {
