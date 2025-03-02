@@ -10,8 +10,11 @@ const RedisClientConfig = redis.RedisClientConfig;
 const Security = @import("app/security/security.zig").Security;
 const SecurityConfig = @import("app/security/config.zig").SecurityConfig;
 
+const ConfigManager = @import("app/config/config.zig").ConfigManager;
+
 pub const Global = struct {
     security: Security,
+    config_manager: ConfigManager,
 };
 
 // Override default settings in `jetzig.config` here:
@@ -77,56 +80,27 @@ pub fn main() !void {
     var app = try jetzig.init(allocator);
     defer app.deinit();
 
+    // Initialize the configuration manager
+    var config_manager = try ConfigManager.init(allocator);
+    defer config_manager.deinit();
+    // std.log.debug("config_file_path = '{s}'", .{config_manager.config_file_path});
+    // std.log.debug("Redis config: host='{s}', port={d}, max_connections={d}", .{ config_manager.redis_config.host, config_manager.redis_config.port, config_manager.redis_config.max_connections });
+    // std.log.debug("Security config: storage.storage_type={}, tokens.access_token_ttl={d}", .{ config_manager.security_config.storage.storage_type, config_manager.security_config.tokens.access_token_ttl });
+
+    // --- Use the loaded configurations ---
     const redis_pool_ptr = try allocator.create(PooledRedisClient);
     errdefer allocator.destroy(redis_pool_ptr);
 
-    redis_pool_ptr.* = try PooledRedisClient.init(allocator, RedisClientConfig{
-        .host = "localhost",
-        .port = 6379,
-        .max_connections = 10,
-    });
+    redis_pool_ptr.* = try PooledRedisClient.init(allocator, config_manager.redis_config);
 
-    // Initialize security with the config
-    const security_config = SecurityConfig{
-        .session = .{
-            .max_sessions_per_user = 5,
-            .session_ttl = 24 * 60 * 60, // 24 hours in seconds
-            .refresh_threshold = 60 * 60, // 1 hour in seconds
-            .cleanup_interval = 60 * 60, // 1 hour in seconds
-        },
-        .storage = .{
-            .storage_type = .both,
-            .cleanup_batch_size = 1000,
-        },
-        .tokens = .{
-            .access_token_ttl = 15 * 60, // 15 minutes
-            .refresh_token_ttl = 7 * 24 * 60 * 60, // 7 days
-            .token_length = 48,
-        },
-        .rate_limit = .{
-            .max_attempts = 5,
-            .window_seconds = 300, // 5 minutes
-            .lockout_duration = 900, // 15 minutes
-        },
-        .audit = .{
-            .enabled = true,
-            .high_risk_events = &.{
-                .login_failed,
-                .password_changed,
-                .mfa_disabled,
-            },
-            .notify_admins = true,
-            .store_type = .both,
-            .log_retention_days = 90,
-        },
-    };
-
-    var security = try Security.init(allocator, security_config, redis_pool_ptr);
+    var security = try Security.init(allocator, config_manager.security_config, redis_pool_ptr);
     defer security.deinit();
+    // -------------------------------------
 
     const global = try allocator.create(Global);
     global.* = .{
         .security = security,
+        .config_manager = config_manager,
     };
 
     try app.start(routes, .{ .global = global });

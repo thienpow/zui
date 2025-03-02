@@ -1,0 +1,36 @@
+{
+  "redis": {
+    "host": "127.0.0.1",
+    "port": 6379,
+    "max_connections": 10
+  },
+  "security": {
+    "session": {
+      "max_sessions_per_user": 5,
+      "session_ttl": 86400,
+      "refresh_threshold": 3600,
+      "cleanup_interval": 3600
+    },
+    "storage": {
+      "storage_type": "both",
+      "cleanup_batch_size": 1000
+    },
+    "tokens": {
+      "access_token_ttl": 900,
+      "refresh_token_ttl": 604800,
+      "token_length": 48
+    },
+    "rate_limit": {
+      "max_attempts": 5,
+      "window_seconds": 300,
+      "lockout_duration": 900
+    },
+    "audit": {
+      "enabled": true,
+      "high_risk_events": ["login_failed", "password_changed", "mfa_disabled"],
+      "notify_admins": true,
+      "store_type": "both",
+      "log_retention_days": 90
+    }
+  }
+}
