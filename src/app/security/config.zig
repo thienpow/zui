@@ -5,8 +5,10 @@ const redis = @import("../database/redis/redis.zig");
 const SecurityEvent = types.SecurityEvent;
 const PooledRedisClient = redis.PooledRedisClient;
 const StorageType = types.StorageType;
+const ProtectedRoute = types.ProtectedRoute;
 
 pub const SecurityConfig = struct {
+    auth_middleware: AuthMiddlewareConfig,
     session: SessionConfig,
     storage: StorageConfig,
     tokens: TokenConfig,
@@ -57,4 +59,19 @@ pub const AuditLogConfig = struct {
     notify_admins: bool = true,
     store_type: StorageType = StorageType.both,
     log_retention_days: u32 = 90,
+};
+
+/// Configuration for authentication middleware
+pub const AuthMiddlewareConfig = struct {
+    /// List of protected routes with their authentication strategies
+    protected_routes: []const ProtectedRoute,
+
+    /// Default redirect URL for unauthenticated browser requests
+    login_redirect_url: []const u8 = "/auth/login",
+
+    /// Whether to append return_to parameter to login redirects
+    use_return_to: bool = true,
+
+    /// Custom response for API authentication failures
+    api_error_message: []const u8 = "Unauthorized access",
 };

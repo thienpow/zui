@@ -78,9 +78,31 @@
 
     document.body.addEventListener('htmx:responseError', (event) => {
         const { xhr } = event.detail;
-        if (xhr.status === 401) {
-            const errorMessageContainer = document.querySelector('#error-message');
-            errorMessageContainer.innerHTML = "Invalid login credentials. Please try again.";
+        const errorMessageContainer = document.querySelector('#error-message');
+
+        switch (xhr.status) {
+            case 401:
+                errorMessageContainer.innerHTML = "Invalid email or password. Please try again.";
+                break;
+            case 403:
+                errorMessageContainer.innerHTML = "Your account has been locked due to multiple failed attempts. Please contact support.";
+                break;
+            case 404:
+                errorMessageContainer.innerHTML = "Account not found. Please check your email or register for a new account.";
+                break;
+            case 429:
+                errorMessageContainer.innerHTML = "Too many login attempts. Please try again later.";
+                break;
+            case 400:
+                errorMessageContainer.innerHTML = "Invalid input. Please check your email and password format.";
+                break;
+            case 422:
+                errorMessageContainer.innerHTML = "Please provide both email and password.";
+                break;
+            case 500:
+            default:
+                errorMessageContainer.innerHTML = "An unexpected error occurred. Please try again later or contact support.";
+                break;
         }
     });
 

@@ -135,3 +135,17 @@ pub const Credentials = struct {
     email: []const u8,
     password: []const u8,
 };
+
+pub const AuthStrategy = enum {
+    session, // Cookie-based session
+    jwt, // JWT bearer token
+    api_key, // API key
+    basic, // HTTP Basic Auth
+    none, // No authentication (public route)
+};
+
+pub const ProtectedRoute = struct {
+    prefix: []const u8,
+    strategy: AuthStrategy,
+    required_roles: ?[]const []const u8 = null, // Optional: roles required for access
+};

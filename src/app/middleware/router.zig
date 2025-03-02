@@ -4,36 +4,6 @@ const jetzig = @import("jetzig");
 const security = @import("../security/security.zig"); // Import Security module
 const SecurityError = @import("../security/security.zig").SecurityError; // Import SecurityError
 
-// Example: List of URL path prefixes that are protected
-const protected_prefixes = &.{
-    "/admin/",
-    "/api/private/",
-    // ... add more prefixes as needed
-};
-
-const layout_mappings = [_][2][]const u8{
-    .{ "/", "landing" },
-    .{ "/about", "landing" },
-
-    .{ "/admin/dashboard", "admin" },
-    .{ "/admin/profile", "admin" },
-    .{ "/admin/products", "admin" },
-    .{ "/admin/orders", "admin" },
-    .{ "/admin/users", "admin" },
-    .{ "/admin/settings", "admin" },
-
-    .{ "/auth/login", "auth" },
-};
-
-fn findMapping(key: []const u8) ?[]const u8 {
-    for (layout_mappings) |entry| {
-        if (std.mem.eql(u8, entry[0], key)) {
-            return entry[1];
-        }
-    }
-    return null;
-}
-
 const router = @This();
 
 /// Initialize middleware.
@@ -47,12 +17,6 @@ pub fn afterRequest(_: *router, request: *jetzig.http.Request) !void {
     if (is_htmx) {
         request.setLayout(null);
     } else {
-
-        // if (findMapping(request.path.base_path)) |layout| {
-        //     try request.server.logger.DEBUG("[router:afterRequest] HTMX request: {s} -> {s}", .{ request.path.base_path, layout });
-        //     request.setLayout(layout);
-        // }
-
         var cookies = try request.cookies();
         var dark = blk: {
             if (cookies.get("dark")) |cookie| {
@@ -101,19 +65,22 @@ pub fn deinit(self: *router, request: *jetzig.http.Request) void {
 pub fn authenticateMiddleware(self: *router, request: *jetzig.http.Request) !void {
     _ = self;
 
-    // Check if the request path starts with any protected prefix
-    for (protected_prefixes) |prefix| {
-        if (std.mem.startsWith(u8, request.path.base_path, prefix)) {
-            // This route is protected, validate session
-            _ = request.global.security.validateSession(request) catch |err| {
-                std.log.warn("Session validation failed for path {s}: {}", .{ request.path.base_path, err });
-                return error.UnauthorizedAccess; // Indicate unauthorized access
-                // Alternatively, you could redirect to login page if it's a browser request:
-                // return request.redirect("/auth/login");
-            };
-            // Session is valid, request proceeds
-            return;
-        }
+    // Skip authentication check if middleware not configured
+    if (request.global.security.auth_middleware == null) {
+        return;
     }
-    // Route is not protected, continue without validation
+
+    // Authenticate the request
+    const auth_result = try request.global.security.auth_middleware.authenticate(request);
+
+    // Handle authentication failure
+    if (!auth_result.authenticated or auth_result.errors != null) {
+        try request.global.security.auth_middleware.handleAuthFailure(request, auth_result);
+        return error.Handled; // Signal that response has been handled
+    }
+
+    // Authentication succeeded, store user ID in request for later use
+    if (auth_result.user_id) |user_id| {
+        try request.data().put("user_id", user_id);
+    }
 }

@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 
 const redis = @import("../../app/database/redis/redis.zig");
 const security = @import("../../app/security/config.zig");
+const types = @import("../../app/security/types.zig");
 
 pub const ConfigManager = struct {
     const Self = @This();
@@ -20,6 +21,28 @@ pub const ConfigManager = struct {
         };
 
         const security_config = security.SecurityConfig{
+            .auth_middleware = .{
+                .protected_routes = &[_]types.ProtectedRoute{
+                    .{
+                        .prefix = "/admin/",
+                        .strategy = .session,
+                        .required_roles = &[_][]const u8{"admin"},
+                    },
+                    .{
+                        .prefix = "/api/private/",
+                        .strategy = .jwt,
+                        .required_roles = null,
+                    },
+                    .{
+                        .prefix = "/api/webhook/",
+                        .strategy = .api_key,
+                        .required_roles = null,
+                    },
+                },
+                .login_redirect_url = "/auth/login",
+                .use_return_to = true,
+                .api_error_message = "Authentication required",
+            },
             .session = .{
                 .max_sessions_per_user = 5,
                 .session_ttl = 24 * 60 * 60, // 24 hours in seconds
@@ -158,6 +181,24 @@ pub const ConfigManager = struct {
         security: security.SecurityConfig,
     };
 
+    fn parseAuthStrategy(str: []const u8) !types.AuthStrategy {
+        if (std.mem.eql(u8, str, "session")) return .session;
+        if (std.mem.eql(u8, str, "jwt")) return .jwt;
+        if (std.mem.eql(u8, str, "api_key")) return .api_key;
+        if (std.mem.eql(u8, str, "basic")) return .basic;
+        if (std.mem.eql(u8, str, "none")) return .none;
+        return error.InvalidAuthStrategy;
+    }
+
+    // Similarly for SecurityEvent parsing
+    fn parseSecurityEvent(str: []const u8) !types.SecurityEvent {
+        if (std.mem.eql(u8, str, "login_failed")) return .login_failed;
+        if (std.mem.eql(u8, str, "password_changed")) return .password_changed;
+        if (std.mem.eql(u8, str, "mfa_disabled")) return .mfa_disabled;
+        // Add all other values...
+        return error.InvalidSecurityEvent;
+    }
+
     pub fn load(self: *Self) !void {
         std.log.debug("Starting load from config file: {s}", .{self.config_file_path});
 
@@ -177,23 +218,184 @@ pub const ConfigManager = struct {
         std.log.debug("Read {d} bytes from config file", .{bytes_read});
         std.log.debug("Config file content: '{s}'", .{file_content});
 
-        var parsed_config = try std.json.parseFromSlice(AppConfig, self.allocator, file_content, .{});
-        defer parsed_config.deinit();
+        // Parse the JSON
+        var parsed_json = try std.json.parseFromSlice(std.json.Value, self.allocator, file_content, .{});
+        defer parsed_json.deinit();
 
-        // Log the parsed values before assignment
-        std.log.debug("Parsed redis config: host='{s}', port={d}, max_connections={d}", .{ parsed_config.value.redis.host, parsed_config.value.redis.port, parsed_config.value.redis.max_connections });
-        std.log.debug("Parsed security config: max_sessions_per_user={d}, access_token_ttl={d}", .{ parsed_config.value.security.session.max_sessions_per_user, parsed_config.value.security.tokens.access_token_ttl });
-
-        // Assign and validate redis_config
-        // TODO: self.redis_config = parsed_config.value.redis;
-        std.log.debug("Assigned redis_config: host='{s}'", .{self.redis_config.host});
-        if (self.redis_config.host.len == 0) {
-            std.log.warn("Redis host is empty in config file, defaulting to '127.0.0.1'", .{});
-            self.redis_config.host = "127.0.0.1";
+        // Get the Redis config
+        if (parsed_json.value.object.get("redis")) |redis_json| {
+            self.redis_config.host = try self.allocator.dupe(u8, redis_json.object.get("host").?.string);
+            self.redis_config.port = @intCast(redis_json.object.get("port").?.integer);
+            self.redis_config.max_connections = @intCast(redis_json.object.get("max_connections").?.integer);
         }
-        std.log.debug("Final redis_config: host='{s}'", .{self.redis_config.host});
 
-        self.security_config = parsed_config.value.security;
+        // Get the security config
+        if (parsed_json.value.object.get("security")) |security_json| {
+            // Parse auth_middleware
+            if (security_json.object.get("auth_middleware")) |middleware_json| {
+                var routes = std.ArrayList(types.ProtectedRoute).init(self.allocator);
+                defer routes.deinit();
+
+                if (middleware_json.object.get("protected_routes")) |routes_json| {
+                    for (routes_json.array.items) |route_json| {
+                        const prefix = route_json.object.get("prefix").?.string;
+                        const strategy_str = route_json.object.get("strategy").?.string;
+                        const strategy = try parseAuthStrategy(strategy_str);
+
+                        var required_roles: ?[]const []const u8 = null;
+                        if (route_json.object.get("required_roles")) |roles_json| {
+                            if (roles_json != .null) {
+                                var roles_list = std.ArrayList([]const u8).init(self.allocator);
+                                for (roles_json.array.items) |role_json| {
+                                    try roles_list.append(try self.allocator.dupe(u8, role_json.string));
+                                }
+                                required_roles = try roles_list.toOwnedSlice();
+                            }
+                        }
+
+                        try routes.append(.{
+                            .prefix = try self.allocator.dupe(u8, prefix),
+                            .strategy = strategy,
+                            .required_roles = required_roles,
+                        });
+                    }
+                }
+
+                self.security_config.auth_middleware.protected_routes = try routes.toOwnedSlice();
+
+                if (middleware_json.object.get("login_redirect_url")) |url_json| {
+                    self.security_config.auth_middleware.login_redirect_url =
+                        try self.allocator.dupe(u8, url_json.string);
+                }
+
+                if (middleware_json.object.get("use_return_to")) |use_return_json| {
+                    self.security_config.auth_middleware.use_return_to = use_return_json.bool;
+                }
+
+                if (middleware_json.object.get("api_error_message")) |msg_json| {
+                    self.security_config.auth_middleware.api_error_message =
+                        try self.allocator.dupe(u8, msg_json.string);
+                }
+            }
+
+            if (security_json.object.get("session")) |session_json| {
+                if (session_json.object.get("max_sessions_per_user")) |max_sessions_json| {
+                    self.security_config.session.max_sessions_per_user = @intCast(max_sessions_json.integer);
+                }
+
+                if (session_json.object.get("session_ttl")) |session_ttl_json| {
+                    self.security_config.session.session_ttl = @intCast(session_ttl_json.integer);
+                }
+
+                if (session_json.object.get("refresh_threshold")) |refresh_threshold_json| {
+                    self.security_config.session.refresh_threshold = @intCast(refresh_threshold_json.integer);
+                }
+
+                if (session_json.object.get("cleanup_interval")) |cleanup_interval_json| {
+                    self.security_config.session.cleanup_interval = @intCast(cleanup_interval_json.integer);
+                }
+            }
+
+            // Parse storage config
+            if (security_json.object.get("storage")) |storage_json| {
+                if (storage_json.object.get("storage_type")) |storage_type_json| {
+                    if (std.mem.eql(u8, storage_type_json.string, "redis")) {
+                        self.security_config.storage.storage_type = .redis;
+                    } else if (std.mem.eql(u8, storage_type_json.string, "database")) {
+                        self.security_config.storage.storage_type = .database;
+                    } else if (std.mem.eql(u8, storage_type_json.string, "both")) {
+                        self.security_config.storage.storage_type = .both;
+                    } else {
+                        std.log.warn("Unknown storage type: {s}, defaulting to 'both'", .{storage_type_json.string});
+                    }
+                }
+
+                if (storage_json.object.get("cleanup_batch_size")) |cleanup_batch_size_json| {
+                    self.security_config.storage.cleanup_batch_size = @intCast(cleanup_batch_size_json.integer);
+                }
+            }
+
+            // Parse tokens config
+            if (security_json.object.get("tokens")) |tokens_json| {
+                if (tokens_json.object.get("access_token_ttl")) |access_token_ttl_json| {
+                    self.security_config.tokens.access_token_ttl = @intCast(access_token_ttl_json.integer);
+                }
+
+                if (tokens_json.object.get("refresh_token_ttl")) |refresh_token_ttl_json| {
+                    self.security_config.tokens.refresh_token_ttl = @intCast(refresh_token_ttl_json.integer);
+                }
+
+                if (tokens_json.object.get("token_length")) |token_length_json| {
+                    self.security_config.tokens.token_length = @intCast(token_length_json.integer);
+                }
+            }
+
+            // Parse rate limit config
+            if (security_json.object.get("rate_limit")) |rate_limit_json| {
+                if (rate_limit_json.object.get("max_attempts")) |max_attempts_json| {
+                    self.security_config.rate_limit.max_attempts = @intCast(max_attempts_json.integer);
+                }
+
+                if (rate_limit_json.object.get("window_seconds")) |window_seconds_json| {
+                    self.security_config.rate_limit.window_seconds = @intCast(window_seconds_json.integer);
+                }
+
+                if (rate_limit_json.object.get("lockout_duration")) |lockout_duration_json| {
+                    self.security_config.rate_limit.lockout_duration = @intCast(lockout_duration_json.integer);
+                }
+            }
+
+            // Parse audit config
+            if (security_json.object.get("audit")) |audit_json| {
+                if (audit_json.object.get("enabled")) |enabled_json| {
+                    self.security_config.audit.enabled = enabled_json.bool;
+                }
+
+                if (audit_json.object.get("notify_admins")) |notify_admins_json| {
+                    self.security_config.audit.notify_admins = notify_admins_json.bool;
+                }
+
+                if (audit_json.object.get("store_type")) |store_type_json| {
+                    if (std.mem.eql(u8, store_type_json.string, "redis")) {
+                        self.security_config.audit.store_type = .redis;
+                    } else if (std.mem.eql(u8, store_type_json.string, "database")) {
+                        self.security_config.audit.store_type = .database;
+                    } else if (std.mem.eql(u8, store_type_json.string, "both")) {
+                        self.security_config.audit.store_type = .both;
+                    } else {
+                        std.log.warn("Unknown audit store type: {s}, defaulting to 'both'", .{store_type_json.string});
+                    }
+                }
+
+                if (audit_json.object.get("log_retention_days")) |log_retention_days_json| {
+                    self.security_config.audit.log_retention_days = @intCast(log_retention_days_json.integer);
+                }
+
+                // Parse high_risk_events array
+                if (audit_json.object.get("high_risk_events")) |high_risk_events_json| {
+                    var events = std.ArrayList(types.SecurityEvent).init(self.allocator);
+                    defer events.deinit();
+
+                    for (high_risk_events_json.array.items) |event_json| {
+                        const event_str = event_json.string;
+                        const event = try parseSecurityEvent(event_str);
+                        try events.append(event);
+                    }
+
+                    // Only free if it's not the default array pointer from initialization
+                    const default_high_risk_events = &[_]types.SecurityEvent{
+                        .login_failed,
+                        .password_changed,
+                        .mfa_disabled,
+                    };
+                    if (self.security_config.audit.high_risk_events.ptr != default_high_risk_events.ptr) {
+                        self.allocator.free(self.security_config.audit.high_risk_events);
+                    }
+
+                    self.security_config.audit.high_risk_events = try events.toOwnedSlice();
+                }
+            }
+        }
 
         std.log.info("Configuration loaded from {s}", .{self.config_file_path});
     }

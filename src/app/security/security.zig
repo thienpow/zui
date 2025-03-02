@@ -7,6 +7,7 @@ const PooledRedisClient = redis.PooledRedisClient;
 const RedisClientConfig = redis.RedisClientConfig;
 
 // Internal module imports
+
 const types = @import("types.zig");
 const Severity = types.Severity;
 const SecurityEvent = types.SecurityEvent;
@@ -17,6 +18,7 @@ const Credentials = types.Credentials;
 const ErrorDetails = types.ErrorDetails;
 
 const config = @import("config.zig");
+const AuthMiddlewareConfig = config.AuthMiddlewareConfig;
 const SecurityConfig = config.SecurityConfig;
 
 const errors = @import("errors.zig");
@@ -26,7 +28,7 @@ const audit_log = @import("audit_log.zig");
 const AuditContext = audit_log.AuditContext;
 const AuditLog = audit_log.AuditLog;
 const AuditLogConfig = config.AuditLogConfig;
-
+const AuthMiddleware = @import("auth_middleware.zig").AuthMiddleware;
 const SessionManager = @import("session_manager.zig").SessionManager;
 const SessionStorage = @import("session_storage.zig").SessionStorage;
 const TokenManager = @import("token_manager.zig").TokenManager;
@@ -44,10 +46,12 @@ pub const Security = struct {
     session: SessionManager,
     tokens: TokenManager,
     rate_limiter: RateLimiter,
+    auth_middleware: AuthMiddleware,
 
     pub fn init(allocator: std.mem.Allocator, security_config: SecurityConfig, redis_pool: *PooledRedisClient) !Security {
         return Security{
             .allocator = allocator,
+            .auth_middleware = AuthMiddleware{ .config = security_config.auth_middleware },
             .audit = AuditLog{
                 .allocator = allocator,
                 .config = security_config.audit,
@@ -499,5 +503,24 @@ pub const Security = struct {
             return auth_header[7..];
         }
         return null;
+    }
+
+    pub fn hasRequiredRoles(self: *Security, user_id: u64, required_roles: []const []const u8) !bool {
+        // This is a stub - you would implement actual role checking
+        // against your user database or roles system
+        _ = self;
+        _ = user_id;
+        _ = required_roles;
+
+        // For now returning true, but you should implement actual role checking
+        return true;
+    }
+
+    // Add API key validation (stub - implement according to your API key system)
+    pub fn validateApiKey(self: *Security, api_key: []const u8) !struct { user_id: u64 } {
+        _ = self;
+        _ = api_key;
+        // This is a stub - implement according to your API key system
+        return error.NotImplemented;
     }
 };
