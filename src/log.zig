@@ -8,15 +8,14 @@ pub fn log(
 ) void {
     // Skip specific debug logs
     if (level == .debug) {
-        if (scope == .redis_client or
-            //  below is not implemented.
-            //  To implement, replace existing std.log.debug in each module
-            //  to example: std.log.scoped(.config_manager).debug
-            //scope == .redis_pool or
-            //scope == .config_manager or
-            //scope == .security or
-            scope == .other)
-        {
+        if ( //scope == .redis_client or
+        //  below is not implemented.
+        //  To implement, replace existing std.log.debug in each module
+        //  to example: std.log.scoped(.config_manager).debug
+        //scope == .redis_pool or
+        //scope == .config_manager or
+        //scope == .security or
+        scope == .other) {
             return;
         }
     }

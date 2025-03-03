@@ -34,8 +34,22 @@ pub const AuthMiddleware = struct {
 
     /// Authenticate a request based on the route
     pub fn authenticate(self: *const AuthMiddleware, request: *jetzig.Request) !AuthResult {
+        // Get a string representation of the path
+        const path_str = blk: {
+            // Try to access path as a string or path.raw
+            if (@hasField(@TypeOf(request.path), "raw")) {
+                break :blk request.path.raw;
+            } else if (@hasField(@TypeOf(request.path), "path")) {
+                break :blk request.path.path;
+            } else {
+                // Log path structure for debugging
+                std.log.debug("Path type: {s}", .{@typeName(@TypeOf(request.path))});
+                break :blk ""; // Default empty string
+            }
+        };
+
         // Check if the route requires authentication
-        const protected_route = self.getRequiredAuthStrategy(request.path) orelse {
+        const protected_route = self.getRequiredAuthStrategy(path_str) orelse {
             // Public route, no authentication required
             return AuthResult{
                 .authenticated = true,
@@ -57,19 +71,33 @@ pub const AuthMiddleware = struct {
     }
 
     fn authenticateWithSession(_: *const AuthMiddleware, request: *jetzig.Request, route: ProtectedRoute) !AuthResult {
-        const sec = &request.app.security;
+        const session = request.global.security.validateSession(request) catch |err| {
+            // Convert the error to a string for debugging
+            const err_name = @errorName(err);
+            std.log.err("Session validation error: {s}", .{err_name});
 
-        const session = sec.validateSession(request) catch |err| {
+            // Map common errors we expect
+            const mapped_error: errors.SecurityError = if (std.mem.eql(u8, err_name, "SessionBindingMismatch"))
+                errors.SecurityError.SessionBindingMismatch
+            else if (std.mem.eql(u8, err_name, "UnauthorizedAccess"))
+                errors.SecurityError.UnauthorizedAccess
+            else if (std.mem.eql(u8, err_name, "SessionExpired"))
+                errors.SecurityError.SessionExpired
+            else if (std.mem.eql(u8, err_name, "ValidationError"))
+                errors.SecurityError.ValidationError
+            else
+                errors.SecurityError.UnauthorizedAccess;
+
             return AuthResult{
                 .authenticated = false,
-                .errors = err,
+                .errors = mapped_error,
                 .strategy_used = .session,
             };
         };
 
         // Check required roles if specified
         if (route.required_roles) |required_roles| {
-            const has_required_role = try sec.hasRequiredRoles(session.user_id, required_roles);
+            const has_required_role = try request.global.security.hasRequiredRoles(session.user_id, required_roles);
             if (!has_required_role) {
                 return AuthResult{
                     .authenticated = true,
@@ -88,7 +116,6 @@ pub const AuthMiddleware = struct {
     }
 
     fn authenticateWithJWT(_: *const AuthMiddleware, request: *jetzig.Request, route: ProtectedRoute) !AuthResult {
-        const sec = &request.app.security;
 
         // Get token from Authorization header
         const auth_header = request.headers.get("Authorization") orelse {
@@ -111,17 +138,26 @@ pub const AuthMiddleware = struct {
         const token = auth_header[7..];
 
         // Validate token
-        const session = sec.tokens.validateAccessToken(token) catch |err| {
+        const session = request.global.security.tokens.validateAccessToken(token) catch |err| {
+            // Map token errors to SecurityError
+            const security_error = switch (err) {
+                token_manager.TokenError.InvalidToken => errors.SecurityError.InvalidToken,
+                token_manager.TokenError.ExpiredToken => errors.SecurityError.SessionExpired,
+                token_manager.TokenError.TokenGenerationFailed => errors.SecurityError.InternalError,
+                token_manager.TokenError.StorageError => errors.SecurityError.InternalError,
+                else => errors.SecurityError.UnauthorizedAccess,
+            };
+
             return AuthResult{
                 .authenticated = false,
-                .errors = err,
+                .errors = security_error,
                 .strategy_used = .jwt,
             };
         };
 
         // Check required roles if specified
         if (route.required_roles) |required_roles| {
-            const has_required_role = try sec.hasRequiredRoles(session.user_id, required_roles);
+            const has_required_role = try request.global.security.hasRequiredRoles(session.user_id, required_roles);
             if (!has_required_role) {
                 return AuthResult{
                     .authenticated = true,
@@ -140,7 +176,6 @@ pub const AuthMiddleware = struct {
     }
 
     fn authenticateWithApiKey(_: *const AuthMiddleware, request: *jetzig.Request, route: ProtectedRoute) !AuthResult {
-        const sec = &request.app.security;
 
         // Get API key from header
         const api_key = request.headers.get("X-API-Key") orelse {
@@ -151,18 +186,34 @@ pub const AuthMiddleware = struct {
             };
         };
 
-        // Validate API key (you'll need to implement this function)
-        const api_key_info = sec.validateApiKey(api_key) catch |err| {
+        // Validate API key
+        const api_key_info = request.global.security.validateApiKey(api_key) catch |err| {
+            // Convert the error to a string for debugging
+            const err_name = @errorName(err);
+            std.log.err("API key validation error: {s}", .{err_name});
+
+            // Map common errors based on error name
+            const mapped_error: errors.SecurityError = if (std.mem.eql(u8, err_name, "InvalidInput"))
+                errors.SecurityError.InvalidInput
+            else if (std.mem.eql(u8, err_name, "InvalidToken"))
+                errors.SecurityError.InvalidToken
+            else if (std.mem.eql(u8, err_name, "UnauthorizedAccess"))
+                errors.SecurityError.UnauthorizedAccess
+            else if (std.mem.eql(u8, err_name, "UserNotFound"))
+                errors.SecurityError.UserNotFound
+            else
+                errors.SecurityError.UnauthorizedAccess;
+
             return AuthResult{
                 .authenticated = false,
-                .errors = err,
+                .errors = mapped_error,
                 .strategy_used = .api_key,
             };
         };
 
         // Check required roles if specified
         if (route.required_roles) |required_roles| {
-            const has_required_role = try sec.hasRequiredRoles(api_key_info.user_id, required_roles);
+            const has_required_role = try request.global.security.hasRequiredRoles(api_key_info.user_id, required_roles);
             if (!has_required_role) {
                 return AuthResult{
                     .authenticated = true,
@@ -181,7 +232,6 @@ pub const AuthMiddleware = struct {
     }
 
     fn authenticateWithBasicAuth(_: *const AuthMiddleware, request: *jetzig.Request, route: ProtectedRoute) !AuthResult {
-        const sec = &request.app.security;
 
         // Get Basic Auth header
         const auth_header = request.headers.get("Authorization") orelse {
@@ -204,7 +254,9 @@ pub const AuthMiddleware = struct {
         // Decode credentials (base64)
         const encoded = auth_header[6..];
         const decoded_size = try std.base64.standard.Decoder.calcSizeForSlice(encoded);
-        const decoded = try request.arena.alloc(u8, decoded_size);
+        const decoded = try request.allocator.alloc(u8, decoded_size);
+        defer request.allocator.free(decoded);
+
         _ = try std.base64.standard.Decoder.decode(decoded, encoded);
 
         // Split username:password
@@ -220,14 +272,14 @@ pub const AuthMiddleware = struct {
         const password = decoded[sep_idx + 1 ..];
 
         // Validate credentials
-        const auth_result = try sec.authenticate(request, .{
+        const auth_result = try request.global.security.authenticate(request, .{
             .email = username,
             .password = password,
         });
 
         // Check required roles if specified
         if (route.required_roles) |required_roles| {
-            const has_required_role = try sec.hasRequiredRoles(auth_result.user.id, required_roles);
+            const has_required_role = try request.global.security.hasRequiredRoles(auth_result.user.id, required_roles);
             if (!has_required_role) {
                 return AuthResult{
                     .authenticated = true,
@@ -247,13 +299,32 @@ pub const AuthMiddleware = struct {
 
     /// Handle authentication failure based on request type (API, HTMX, browser)
     pub fn handleAuthFailure(self: *const AuthMiddleware, request: *jetzig.Request, _: AuthResult) !void {
-        const is_api = std.mem.startsWith(u8, request.path, "/api/");
+        const path_str = blk: {
+            // Try to access path as a string or path.raw
+            if (@hasField(@TypeOf(request.path), "raw")) {
+                break :blk request.path.raw;
+            } else if (@hasField(@TypeOf(request.path), "path")) {
+                break :blk request.path.path;
+            } else {
+                // Default to empty string if we can't determine the path
+                std.log.debug("Path type: {s}", .{@typeName(@TypeOf(request.path))});
+                break :blk "";
+            }
+        };
+
+        const is_api = std.mem.startsWith(u8, path_str, "/api/");
         const is_htmx = request.headers.get("HX-Request") != null;
 
         if (is_api) {
             // API requests should get a proper 401 response
-            request.response.status = .unauthorized;
-            try request.response.json(.{ .errors = self.config.api_error_message, .code = 401 });
+            request.response.status_code = .unauthorized;
+            request.response.content_type = "application/json";
+            // Create JSON string
+            const json_str = try std.json.stringifyAlloc(request.allocator, .{ .errors = self.config.api_error_message, .code = 401 }, .{});
+            defer request.allocator.free(json_str);
+
+            // Set the content
+            request.response.content = json_str;
         } else if (is_htmx) {
             // HTMX requests get a redirect header
             try request.response.headers.append("HX-Redirect", self.config.login_redirect_url);
@@ -261,12 +332,52 @@ pub const AuthMiddleware = struct {
             // Browser requests should redirect to login
             if (self.config.use_return_to) {
                 // Store the original URL as a query parameter for post-login redirect
-                const return_url = try std.Uri.escapeString(request.allocator, request.path);
+                const return_url = try urlEncode(request.allocator, path_str);
+                defer request.allocator.free(return_url);
+
                 const redirect_url = try std.fmt.allocPrint(request.allocator, "{s}?return_to={s}", .{ self.config.login_redirect_url, return_url });
-                try request.redirect(redirect_url);
+                _ = request.redirect(redirect_url, .found);
             } else {
-                try request.redirect(self.config.login_redirect_url);
+                _ = request.redirect(self.config.login_redirect_url, .found);
             }
         }
     }
 };
+
+// Simple URL encoding function
+fn urlEncode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    // Estimate size (worst case: each char becomes %XX)
+    const max_size = input.len * 3;
+    const output = try allocator.alloc(u8, max_size);
+
+    var i: usize = 0;
+    var o: usize = 0;
+
+    while (i < input.len) {
+        const c = input[i];
+
+        // These characters don't need encoding according to RFC 3986
+        if ((c >= 'A' and c <= 'Z') or
+            (c >= 'a' and c <= 'z') or
+            (c >= '0' and c <= '9') or
+            c == '-' or c == '_' or c == '.' or c == '~')
+        {
+            output[o] = c;
+            o += 1;
+        } else {
+            // URL encode as %XX
+            output[o] = '%';
+            o += 1;
+            const hex = "0123456789ABCDEF";
+            output[o] = hex[c >> 4];
+            o += 1;
+            output[o] = hex[c & 0x0F];
+            o += 1;
+        }
+
+        i += 1;
+    }
+
+    // Resize to actual length
+    return allocator.realloc(output, o);
+}

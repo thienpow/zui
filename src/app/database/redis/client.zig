@@ -632,7 +632,7 @@ pub const RedisClient = struct {
         return null;
     }
 
-    pub fn sAdd(self: *Self, key: []const u8, member: []const u8) !void {
+    pub fn sAdd(self: *Self, key: []const u8, member: []const u8) !u64 {
         if (key.len == 0 or member.len == 0) return RedisError.InvalidArgument;
 
         // Format SADD command using the existing formatCommand method
@@ -645,7 +645,22 @@ pub const RedisClient = struct {
 
         // SADD returns an integer (number of elements added)
         if (!std.mem.startsWith(u8, response, ":")) return RedisError.InvalidResponse;
-        const count = try std.fmt.parseInt(u64, response[1 .. response.len - 2], 10);
-        if (count > 1) return RedisError.InvalidResponse; // SADD with one member should return 0 or 1
+        return try std.fmt.parseInt(u64, response[1 .. response.len - 2], 10);
+    }
+
+    pub fn sRem(self: *Self, key: []const u8, member: []const u8) !u64 {
+        if (key.len == 0 or member.len == 0) return RedisError.InvalidArgument;
+
+        // Format SREM command
+        const cmd = try self.formatCommand("*3\r\n$4\r\nSREM\r\n${d}\r\n{s}\r\n${d}\r\n{s}\r\n", .{ key.len, key, member.len, member });
+        defer self.allocator.free(cmd);
+
+        // Execute the command
+        const response = try self.executeCommand(cmd);
+        defer self.allocator.free(response);
+
+        // SREM returns an integer (number of elements removed)
+        if (!std.mem.startsWith(u8, response, ":")) return RedisError.InvalidResponse;
+        return try std.fmt.parseInt(u64, response[1 .. response.len - 2], 10);
     }
 };

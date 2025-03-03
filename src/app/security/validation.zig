@@ -1,6 +1,6 @@
 const std = @import("std");
 const jetzig = @import("jetzig");
-
+const ip_utils = @import("../utils/ip.zig");
 const types = @import("types.zig");
 const AuditMetadata = @import("audit_log.zig").AuditMetadata;
 
@@ -24,30 +24,39 @@ pub fn validateSessionBinding(session: Session, request: *jetzig.Request) !bool 
         return error.SessionExpired;
     }
 
-    if (!isValidIPAddress(request.client_address)) {
-        return error.InvalidIPAddress;
-    }
+    // Get client IP from headers instead of client_address
+    const client_ip = ip_utils.getClientIp(request);
 
-    // Skip validation if session doesn't have binding metadata
-    if (session.metadata.ip_address == null and
-        session.metadata.user_agent == null)
-    {
-        return true;
-    }
+    // Debug: Log the client IP and session metadata
+    std.log.debug("[validateSessionBinding] Client IP: '{s}'", .{client_ip});
+    std.log.debug("[validateSessionBinding] Session metadata: ip='{s}', ua='{s}'", .{ session.metadata.ip_address orelse "null", session.metadata.user_agent orelse "null" });
 
-    const current_ip = request.headers.get("X-Forwarded-For") orelse request.client_address;
-    const current_ua = request.headers.get("User-Agent") orelse "";
+    // if (!isValidIPAddress(client_ip)) {
+    //     std.log.warn("Invalid IP address format: {s}", .{client_ip});
+    //     return error.InvalidIPAddress;
+    // }
 
     // Validate IP address binding if present
     if (session.metadata.ip_address) |stored_ip| {
-        // Optional: Allow for IP range checking instead of exact match
-        if (!std.mem.eql(u8, stored_ip, current_ip)) {
-            std.log.warn("Session IP mismatch - Stored: {s}, Current: {s}", .{ stored_ip, current_ip });
+        // Skip empty or special IPs
+        if (stored_ip.len == 0 or
+            std.mem.eql(u8, stored_ip, "localhost") or
+            std.mem.eql(u8, stored_ip, "127.0.0.1") or
+            std.mem.eql(u8, stored_ip, "unknown"))
+        {
+            std.log.debug("[validateSessionBinding] Skipping validation for special IP: '{s}'", .{stored_ip});
+            return true;
+        }
+
+        if (!std.mem.eql(u8, stored_ip, client_ip)) {
+            std.log.warn("Session IP mismatch - Stored: '{s}', Current: '{s}'", .{ stored_ip, client_ip });
             return ValidationError.SessionBindingMismatch;
         }
     }
 
     // Validate User-Agent binding if present
+    const current_ua = request.headers.get("User-Agent") orelse "";
+
     if (session.metadata.user_agent) |stored_ua| {
         // Optional: Could implement fuzzy matching or partial UA comparison
         if (!std.mem.eql(u8, stored_ua, current_ua)) {
@@ -181,7 +190,7 @@ fn validateCustomData(data: std.json.Value) !void {
 pub fn isValidIPAddress(ip: []const u8) bool {
 
     // Basic IPv4 validation
-    var splits = std.mem.split(u8, ip, ".");
+    var splits = std.mem.splitScalar(u8, ip, '.');
     var count: u8 = 0;
 
     while (splits.next()) |octet| {
@@ -208,4 +217,27 @@ pub fn isValidUserAgent(ua: []const u8) bool {
     }
 
     return true;
+}
+
+fn getClientIp(request: *jetzig.Request) []const u8 {
+    // Try various headers that might contain the client IP
+    if (request.headers.get("X-Forwarded-For")) |ip| {
+        // X-Forwarded-For might contain multiple IPs; get the first one
+        const comma_pos = std.mem.indexOf(u8, ip, ",");
+        if (comma_pos) |pos| {
+            return std.mem.trim(u8, ip[0..pos], " ");
+        }
+        return ip;
+    }
+
+    if (request.headers.get("X-Real-IP")) |ip| {
+        return ip;
+    }
+
+    if (request.headers.get("CF-Connecting-IP")) |ip| {
+        return ip;
+    }
+
+    // If no IP is found in headers, return a fallback value
+    return "127.0.0.1";
 }

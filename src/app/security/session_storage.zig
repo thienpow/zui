@@ -14,17 +14,58 @@ pub const SessionStorage = struct {
     storage_config: StorageConfig,
     redis_pool: *PooledRedisClient,
 
-    pub fn getSession(self: *SessionStorage, token: []const u8) !?Session {
-        std.log.info("[session_storage.getSession] token={s}", .{token});
+    pub fn getSessionByToken(self: *SessionStorage, token: []const u8) !?Session {
+        std.log.info("[session_storage.getSessionByToken] token={s}", .{token});
         var client = try self.redis_pool.acquire();
         defer self.redis_pool.release(client);
 
-        const key = try std.fmt.allocPrint(self.allocator, "session:{s}", .{token});
+        const key = try std.fmt.allocPrint(self.allocator, "session_token:{s}", .{token});
         defer self.allocator.free(key);
 
         // Handle the optional result from get()
         const data = (try client.get(key)) orelse {
-            std.log.info("[session_storage.getSession] Key not found: {s}", .{key});
+            std.log.info("[session_storage.getSessionByToken] Key not found: {s}", .{key});
+            return null;
+        };
+
+        std.log.info("[session_storage.getSessionByToken] Raw data retrieved: {s}", .{data});
+        // DON'T defer free the data yet - we need it until we're done with the session
+
+        // Use allocate option to ensure strings are properly owned
+        const options = std.json.ParseOptions{
+            .allocate = .alloc_always, // This makes it allocate strings
+            .ignore_unknown_fields = false,
+        };
+
+        const session = std.json.parseFromSliceLeaky(
+            Session,
+            self.allocator,
+            data,
+            options,
+        ) catch |err| {
+            self.allocator.free(data); // Free data before returning
+            std.log.err("Failed to parse session data: {}", .{err});
+            return null;
+        };
+
+        // Now we can free the original data
+        self.allocator.free(data);
+
+        std.log.info("[session_storage.getSessionByToken] Parsed session ID: {s}", .{session.id});
+        return session;
+    }
+
+    pub fn getSessionById(self: *SessionStorage, session_id: []const u8) !?Session {
+        std.log.info("[session_storage.getSessionById] session_id={s}", .{session_id});
+        var client = try self.redis_pool.acquire();
+        defer self.redis_pool.release(client);
+
+        const key = try std.fmt.allocPrint(self.allocator, "session:{s}", .{session_id});
+        defer self.allocator.free(key);
+
+        // Handle the optional result from get()
+        const data = (try client.get(key)) orelse {
+            std.log.info("[session_storage.getSessionById] Key not found: {s}", .{key});
             return null;
         };
 
@@ -37,6 +78,7 @@ pub const SessionStorage = struct {
             .{},
         ) catch |err| {
             std.log.err("Failed to parse session data: {}", .{err});
+            std.log.err("Raw session data: {s}", .{data});
             return null;
         };
         defer parsed.deinit();
@@ -44,59 +86,56 @@ pub const SessionStorage = struct {
         return parsed.value;
     }
 
-    // fn saveToDatabase(self: *SessionStorage, session: Session) !void {
-    //     try self.db_pool.transaction(struct {
-    //         pub fn run(tx: *sql.Transaction) !void {
-    //             // Store session
-    //             try tx.exec(
-    //                 \\INSERT INTO sessions
-    //                 \\(id, user_id, token, created_at, expires_at, metadata)
-    //                 \\VALUES (?, ?, ?, ?, ?, ?)
-    //             ,
-    //                 .{
-    //                     session.id,
-    //                     session.user_id,
-    //                     session.token,
-    //                     session.created_at,
-    //                     session.expires_at,
-    //                     session.metadata,
-    //                 },
-    //             );
-
-    //             // Update session count
-    //             try tx.exec(
-    //                 \\INSERT INTO user_session_stats
-    //                 \\(user_id, session_count, last_session_at)
-    //                 \\VALUES (?, 1, ?)
-    //                 \\ON CONFLICT (user_id) DO UPDATE
-    //                 \\SET session_count = session_count + 1,
-    //                 \\    last_session_at = EXCLUDED.last_session_at
-    //             ,
-    //                 .{
-    //                     session.user_id,
-    //                     session.created_at,
-    //                 },
-    //             );
-    //         }
-    //     });
-    // }
-
     pub fn invalidateSession(self: *SessionStorage, session_id: []const u8) !void {
         var client = try self.redis_pool.acquire();
         defer self.redis_pool.release(client);
 
-        const key = try std.fmt.allocPrint(self.allocator, "session:{s}", .{session_id});
-        defer self.allocator.free(key);
+        // First get the session to find its token
+        const session = (try self.getSessionById(session_id)) orelse {
+            std.log.info("[session_storage.invalidateSession] Session not found: {s}", .{session_id});
+            return;
+        };
 
-        _ = try client.del(key);
+        // Delete the session by ID
+        const id_key = try std.fmt.allocPrint(self.allocator, "session:{s}", .{session_id});
+        defer self.allocator.free(id_key);
+        _ = try client.del(id_key);
+
+        // Delete the token-based reference
+        const token_key = try std.fmt.allocPrint(self.allocator, "session_token:{s}", .{session.token});
+        defer self.allocator.free(token_key);
+        _ = try client.del(token_key);
+
+        // Remove from user's session set
+        const user_key = try std.fmt.allocPrint(self.allocator, "user:{d}:sessions", .{session.user_id});
+        defer self.allocator.free(user_key);
+        _ = try client.sRem(user_key, session_id);
     }
 
     pub fn saveSession(self: *SessionStorage, session: Session) !void {
+        // Log the complete session before saving
+        std.log.debug("[session_storage.saveSession] Saving session: id='{s}' (len: {})", .{ session.id, session.id.len });
+        std.log.debug("[session_storage.saveSession] User ID: {d}, token='{s}' (len: {})", .{ session.user_id, session.token, session.token.len });
+
+        // Specifically log metadata with details on if it's null or not
+        const ip_str = if (session.metadata.ip_address) |ip|
+            std.fmt.allocPrint(self.allocator, "'{s}' (len: {})", .{ ip, ip.len }) catch "allocation error"
+        else
+            "null";
+        defer if (!std.mem.eql(u8, ip_str, "null") and !std.mem.eql(u8, ip_str, "allocation error"))
+            self.allocator.free(ip_str);
+
+        const ua_str = if (session.metadata.user_agent) |ua|
+            std.fmt.allocPrint(self.allocator, "'{s}' (len: {})", .{ ua, ua.len }) catch "allocation error"
+        else
+            "null";
+        defer if (!std.mem.eql(u8, ua_str, "null") and !std.mem.eql(u8, ua_str, "allocation error"))
+            self.allocator.free(ua_str);
+
+        std.log.debug("[session_storage.saveSession] Metadata: ip_address={s}, user_agent={s}", .{ ip_str, ua_str });
+
         var client = try self.redis_pool.acquire();
         defer self.redis_pool.release(client);
-
-        const key = try std.fmt.allocPrint(self.allocator, "session:{s}", .{session.id});
-        defer self.allocator.free(key);
 
         // Create a buffer for JSON serialization
         var json_buffer = std.ArrayList(u8).init(self.allocator);
@@ -105,15 +144,24 @@ pub const SessionStorage = struct {
         // Stringify the session into the buffer
         try std.json.stringify(session, .{}, json_buffer.writer());
 
-        // Get the resulting JSON string
+        // Get the resulting JSON string and log it
         const value = json_buffer.items;
+        std.log.debug("[session_storage.saveSession] JSON serialized: {s}", .{value});
 
-        try client.setEx(key, value, self.session_config.session_ttl);
+        // Store session by ID
+        const id_key = try std.fmt.allocPrint(self.allocator, "session:{s}", .{session.id});
+        defer self.allocator.free(id_key);
+        try client.setEx(id_key, value, self.session_config.session_ttl);
 
+        // Store session by token (for lookup from cookies)
+        const token_key = try std.fmt.allocPrint(self.allocator, "session_token:{s}", .{session.token});
+        defer self.allocator.free(token_key);
+        try client.setEx(token_key, value, self.session_config.session_ttl);
+
+        // Add to user's session set
         const user_key = try std.fmt.allocPrint(self.allocator, "user:{d}:sessions", .{session.user_id});
         defer self.allocator.free(user_key);
-
-        try client.sAdd(user_key, session.id);
+        _ = try client.sAdd(user_key, session.id);
         try client.expire(user_key, self.session_config.session_ttl);
     }
 
@@ -140,6 +188,25 @@ pub const SessionStorage = struct {
 
             if (cursor == 0) break;
         }
+
+        // Also clean up token-based keys
+        cursor = 0;
+        const token_pattern = "session_token:*";
+
+        while (true) {
+            const scan_result = try client.scan(cursor, token_pattern, batch_size);
+            cursor = scan_result.cursor;
+
+            for (scan_result.keys) |key| {
+                if (try client.ttl(key)) |ttl| {
+                    if (ttl <= 0) {
+                        _ = try client.del(key);
+                    }
+                }
+            }
+
+            if (cursor == 0) break;
+        }
     }
 
     pub fn getUserActiveSessions(self: *SessionStorage, user_id: u64) ![]Session {
@@ -149,27 +216,17 @@ pub const SessionStorage = struct {
         var client = try self.redis_pool.acquire();
         defer self.redis_pool.release(client);
 
-        const user_key = try std.fmt.allocPrint(self.allocator, "user:{}:sessions", .{user_id});
+        const user_key = try std.fmt.allocPrint(self.allocator, "user:{d}:sessions", .{user_id});
         defer self.allocator.free(user_key);
 
         if (try client.sMembers(user_key)) |session_ids| {
             for (session_ids) |session_id| {
-                if (try self.getSession(session_id)) |session| {
+                if (try self.getSessionById(session_id)) |session| {
                     try sessions.append(session);
                 }
             }
         }
         return sessions.toOwnedSlice(); // Caller needs to free this
-    }
-
-    fn removeFromRedis(self: *SessionStorage, session_id: []const u8) !void {
-        var client = try self.redis_pool.acquire();
-        defer self.redis_pool.release(client);
-
-        const key = try std.fmt.allocPrint(self.allocator, "session:{s}", .{session_id});
-        defer self.allocator.free(key);
-
-        _ = try client.del(key);
     }
 
     pub const SessionError = error{

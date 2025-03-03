@@ -62,8 +62,8 @@ pub const SessionManager = struct {
             .created_at = std.time.timestamp(),
             .expires_at = std.time.timestamp() + self.config.session_ttl,
             .metadata = .{
-                .ip_address = user.last_ip,
-                .user_agent = user.last_user_agent,
+                .ip_address = user.last_ip, // Make sure IP is always populated
+                .user_agent = request.headers.get("User-Agent") orelse user.last_user_agent,
                 .device_id = user.device_id,
             },
         };
@@ -85,14 +85,19 @@ pub const SessionManager = struct {
         // Debug: Log the token value and length
         std.log.debug("[session_manager.validate] Token received: '{s}' (length: {})", .{ token, token.len });
 
-        const session = try self.storage.getSession(token) orelse {
+        const session = try self.storage.getSessionByToken(token) orelse {
             std.log.debug("[session_manager.validate] No session found for token: '{s}'", .{token});
+            try self.clearSessionCookie(request);
             return error.InvalidSession;
         };
+
+        std.log.debug("[session_manager.validate] Session found: id='{s}', user_id={d}, token='{s}'", .{ session.id, session.user_id, session.token });
+        std.log.debug("[session_manager.validate] Session metadata: ip_address='{s}', user_agent='{s}'", .{ session.metadata.ip_address orelse "null", session.metadata.user_agent orelse "null" });
 
         if (self.isExpired(session)) {
             std.log.debug("[session_manager.validate] Session expired for token: '{s}', id: '{s}'", .{ token, session.id });
             try self.storage.invalidateSession(session.id);
+            try self.clearSessionCookie(request);
             return error.SessionExpired;
         }
 
@@ -151,7 +156,7 @@ pub const SessionManager = struct {
         _ = self;
         const cookie_header = request.headers.get("Cookie") orelse return null;
 
-        var cookie_iter = std.mem.tokenize(u8, cookie_header, "; ");
+        var cookie_iter = std.mem.tokenizeAny(u8, cookie_header, "; ");
         while (cookie_iter.next()) |cookie| {
             if (std.mem.startsWith(u8, cookie, "session_id=")) {
                 return cookie["session_id=".len..];

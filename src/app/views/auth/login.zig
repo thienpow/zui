@@ -1,5 +1,7 @@
 const std = @import("std");
 const jetzig = @import("jetzig");
+
+const ip_utils = @import("../../utils/ip.zig");
 const SecurityError = @import("../../security/errors.zig").SecurityError;
 const SecurityEvent = @import("../../security/types.zig").SecurityEvent;
 const ErrorDetails = @import("../../security/types.zig").ErrorDetails;
@@ -26,7 +28,7 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
             null,
             .{
                 .action_details = "Missing required parameters",
-                .ip_address = try request.global.security.getIdentifier(request),
+                .ip_address = ip_utils.getClientIp(request),
                 .user_agent = request.headers.get("User-Agent"),
             },
         );

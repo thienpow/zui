@@ -159,13 +159,15 @@ pub const TokenManager = struct {
         const key = try std.fmt.allocPrint(self.allocator, "access_token:{s}", .{token});
         defer self.allocator.free(key);
 
-        const value = try client.get(key) catch |err| switch (err) {
+        const value = (client.get(key) catch |err| switch (err) {
             redis.RedisError.ConnectionFailed => return TokenError.StorageError,
             redis.RedisError.CommandFailed => return TokenError.StorageError,
             else => return err,
-        } orelse return TokenError.InvalidToken;
+        }) orelse return TokenError.InvalidToken;
 
-        return try std.json.parse(Session, value, .{});
+        var parsed = try std.json.parseFromSlice(Session, self.allocator, value, .{});
+        defer parsed.deinit();
+        return parsed.value;
     }
 
     pub fn isRevoked(self: *TokenManager, token: []const u8) !bool {
