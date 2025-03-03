@@ -1,4 +1,6 @@
 const std = @import("std");
+const custom_log = @import("log.zig");
+
 const builtin = @import("builtin");
 const jetzig = @import("jetzig");
 const zmd = @import("zmd");
@@ -11,6 +13,11 @@ const Security = @import("app/security/security.zig").Security;
 const SecurityConfig = @import("app/security/config.zig").SecurityConfig;
 
 const ConfigManager = @import("app/config/config.zig").ConfigManager;
+
+pub const std_options: std.Options = .{
+    .log_level = std.log.Level.debug,
+    .logFn = custom_log.log,
+};
 
 pub const Global = struct {
     security: Security,

@@ -1,6 +1,7 @@
 .{
-    .name = "zui",
+    .name = .zui,
     .version = "0.0.0",
+    .fingerprint = 0xc00160dbab01d75b,
     .dependencies = .{
         .jetzig = .{
             .path = "../jetzig-framework/jetzig",
