@@ -27,9 +27,11 @@ pub const Global = struct {
 // Override default settings in `jetzig.config` here:
 pub const jetzig_options = struct {
     pub const middleware: []const type = &.{
-        // jetzig.middleware.HtmxMiddleware,
+        jetzig.middleware.HtmxMiddleware,
         // jetzig.middleware.CompressionMiddleware,
-        @import("app/middleware/router.zig"),
+        @import("app/middleware/auth.zig"),
+        @import("app/middleware/theme.zig"),
+        //@import("app/middleware/htmx.zig"),
     };
 
     pub const max_bytes_request_body: usize = std.math.pow(usize, 2, 16);

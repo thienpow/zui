@@ -41,9 +41,8 @@ pub const SessionManager = struct {
         if (active_sessions.len >= self.config.max_sessions_per_user) {
             // Assuming active_sessions[0].id is []const u8 from storage
             if (active_sessions.len > 0) {
-                std.log.debug("[session_manager.create] Max sessions ({d}) reached, invalidating oldest session id: '{s}'", .{
+                std.log.debug("[session_manager.create] Max sessions ({d}) reached", .{
                     self.config.max_sessions_per_user,
-                    active_sessions[0].id,
                 });
                 try self.storage.invalidateSession(active_sessions[0].id);
             } else {
