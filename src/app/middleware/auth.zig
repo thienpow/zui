@@ -3,7 +3,6 @@ const jetzig = @import("jetzig");
 
 const security = @import("../security/security.zig");
 const SecurityError = security.SecurityError;
-const req_ultil = @import("../utils/request.zig");
 
 const auth = @This();
 
@@ -19,11 +18,10 @@ pub fn deinit(self: *auth, request: *jetzig.http.Request) void {
 
 pub fn afterRequest(self: *auth, request: *jetzig.http.Request) !void {
     // Only handle authentication logic
-    const path_str = req_ultil.getPathString(request);
-    const is_auth_path = isAuthPath(path_str);
+    const is_auth_path = isAuthPath(request.path.path);
     if (is_auth_path) return;
 
-    const auth_success = try authenticateRequest(self, request, path_str);
+    const auth_success = try authenticateRequest(self, request);
     if (!auth_success) return;
 
     // Handle redirects for authenticated users trying to access auth pages
@@ -43,12 +41,12 @@ fn isAuthPath(path: []const u8) bool {
 }
 
 // Main authentication function
-pub fn authenticateRequest(self: *auth, request: *jetzig.http.Request, path_str: []const u8) !bool {
+pub fn authenticateRequest(self: *auth, request: *jetzig.http.Request) !bool {
     _ = self;
 
     // Check if the route requires authentication using the auth middleware config
     const auth_middleware = request.global.security.auth_middleware;
-    const protected_route = auth_middleware.getRequiredAuthStrategy(path_str);
+    const protected_route = auth_middleware.getRequiredAuthStrategy(request.path.path);
 
     if (protected_route == null) {
         try request.server.logger.DEBUG("[auth:auth] Route is not protected, skipping authentication", .{});
@@ -56,7 +54,7 @@ pub fn authenticateRequest(self: *auth, request: *jetzig.http.Request, path_str:
     }
 
     // Route is protected, perform authentication
-    try request.server.logger.DEBUG("[auth:auth] Authenticating protected route: {s}", .{path_str});
+    try request.server.logger.DEBUG("[auth:auth] Authenticating protected route: {s}", .{request.path.path});
     const auth_result = try auth_middleware.authenticate(request);
     try request.server.logger.DEBUG("[auth:auth] Auth result: authenticated={}", .{auth_result.authenticated});
 
