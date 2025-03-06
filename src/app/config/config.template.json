@@ -1,0 +1,115 @@
+{
+  "redis": {
+    "host": "127.0.0.1",
+    "port": 6379,
+    "max_connections": 10
+  },
+  "security": {
+    "auth_middleware": {
+      "protected_routes": [
+        {
+          "prefix": "/admin",
+          "strategy": "session",
+          "required_roles": ["admin"]
+        },
+        {
+          "prefix": "/api/private",
+          "strategy": "jwt",
+          "required_roles": ["api_user"]
+        },
+        {
+          "prefix": "/api/webhook",
+          "strategy": "api_key",
+          "required_roles": null
+        },
+        {
+          "prefix": "/user/profile",
+          "strategy": "session",
+          "required_roles": ["user"]
+        },
+        {
+          "prefix": "/api/public",
+          "strategy": "jwt",
+          "required_roles": null
+        }
+      ],
+      "login_redirect_url": "/auth/login",
+      "use_return_to": true,
+      "api_error_message": "Authentication required"
+    },
+    "session": {
+      "max_sessions_per_user": 5,
+      "session_ttl": 86400,
+      "refresh_threshold": 3600,
+      "cleanup_interval": 3600
+    },
+    "storage": {
+      "storage_type": "both",
+      "cleanup_batch_size": 1000
+    },
+    "tokens": {
+      "access_token_ttl": 900,
+      "refresh_token_ttl": 604800,
+      "token_length": 48
+    },
+    "rate_limit": {
+      "max_attempts": 5,
+      "window_seconds": 300,
+      "lockout_duration": 900
+    },
+    "audit": {
+      "enabled": true,
+      "high_risk_events": ["login_failed", "password_changed", "mfa_disabled"],
+      "notify_admins": true,
+      "store_type": "both",
+      "log_retention_days": 90
+    },
+    "oauth": {
+      "enabled": true,
+      "state_cookie_name": "oauth_state",
+      "state_cookie_max_age": 600,
+      "default_redirect": "/dashboard",
+      "user_auto_create": true,
+      "user_auto_login": true,
+      "providers": [
+        {
+          "provider": "google",
+          "name": "Google",
+          "client_id": "",
+          "client_secret": "",
+          "auth_url": "https://accounts.google.com/o/oauth2/v2/auth",
+          "token_url": "https://oauth2.googleapis.com/token",
+          "userinfo_url": "https://www.googleapis.com/oauth2/v3/userinfo",
+          "redirect_uri": "http://localhost:8080/auth/oauth/callback/google",
+          "scope": "email profile",
+          "enabled": true
+        },
+        {
+          "provider": "github",
+          "name": "GitHub",
+          "client_id": "",
+          "client_secret": "",
+          "auth_url": "https://github.com/login/oauth/authorize",
+          "token_url": "https://github.com/login/oauth/access_token",
+          "userinfo_url": "https://api.github.com/user",
+          "redirect_uri": "http://localhost:8080/auth/oauth/callback/github",
+          "scope": "user:email",
+          "enabled": true
+        },
+        {
+          "provider": "custom",
+          "name": "Custom Provider",
+          "client_id": "CUSTOM_CLIENT_ID",
+          "client_secret": "CUSTOM_CLIENT_SECRET",
+          "auth_url": "https://custom-provider.com/oauth/authorize",
+          "token_url": "https://custom-provider.com/oauth/token",
+          "userinfo_url": "https://custom-provider.com/oauth/userinfo",
+          "redirect_uri": "http://localhost:8000/auth/oauth/callback/custom",
+          "scope": "profile email",
+          "custom_provider_id": "custom-provider",
+          "enabled": false
+        }
+      ]
+    }
+  }
+}
