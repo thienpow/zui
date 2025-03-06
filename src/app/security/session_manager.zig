@@ -34,12 +34,10 @@ pub const SessionManager = struct {
     }
 
     pub fn create(self: *SessionManager, user: User, request: *jetzig.Request) !Session {
-        // Assuming user.id is u64
         std.log.debug("[session_manager.create] Checking active session count for user_id: {}", .{user.id});
         const active_sessions = try self.storage.getUserActiveSessions(user.id);
 
         if (active_sessions.len >= self.config.max_sessions_per_user) {
-            // Assuming active_sessions[0].id is []const u8 from storage
             if (active_sessions.len > 0) {
                 std.log.debug("[session_manager.create] Max sessions ({d}) reached", .{
                     self.config.max_sessions_per_user,
@@ -52,36 +50,31 @@ pub const SessionManager = struct {
             }
         }
 
-        // Assuming user.id is u64
         std.log.debug("[session_manager.create] Creating new session for user_id: {}", .{user.id});
         const session = Session{
-            .id = try self.generateSessionId(), // []const u8 from generateSessionId
-            .user_id = user.id, // u64
-            .token = try self.generateSecureToken(), // []const u8 from generateSecureToken
+            .id = try self.generateSessionId(),
+            .user_id = user.id,
+            .token = try self.generateSecureToken(),
             .created_at = std.time.timestamp(),
             .expires_at = std.time.timestamp() + self.config.session_ttl,
             .metadata = .{
-                .ip_address = user.last_ip, // Make sure IP is always populated
+                .ip_address = user.last_ip,
                 .user_agent = request.headers.get("User-Agent") orelse user.last_user_agent,
                 .device_id = user.device_id,
             },
         };
 
-        // session.id and session.token are []const u8
         std.log.debug("[session_manager.create] Saving session with id: '{s}', token: '{s}'", .{ session.id, session.token });
         try self.storage.saveSession(session);
 
-        // session.token is []const u8
         std.log.debug("[session_manager.create] Setting session cookie with token: '{s}'", .{session.token});
         try self.setSessionCookie(request, session.token);
 
-        // Assuming user.id is u64
         std.log.debug("[session_manager.create] Session created successfully for user_id: {}", .{user.id});
         return session;
     }
 
     pub fn validate(self: *SessionManager, token: []const u8, request: *jetzig.Request) !Session {
-        // Debug: Log the token value and length
         std.log.debug("[session_manager.validate] Token received: '{s}' (length: {})", .{ token, token.len });
 
         const session = try self.storage.getSessionByToken(token) orelse {
@@ -133,39 +126,59 @@ pub const SessionManager = struct {
 
     // --- Cookie Management Functions ---
 
-    fn setSessionCookie(self: *SessionManager, request: *jetzig.Request, token: []const u8) !void {
-        // Format the Set-Cookie header value
-        const cookie_value = try std.fmt.allocPrint(self.allocator, "session_id={s}; Max-Age={d}; Path=/; HttpOnly; Secure; SameSite=Strict", .{
-            token,
-            self.config.session_ttl,
-        });
-        defer self.allocator.free(cookie_value);
+    pub fn setSessionCookie(self: *SessionManager, request: *jetzig.Request, token: []const u8) !void {
+        std.log.debug("[session_manager.setSessionCookie] Starting cookie set for token: '{s}'", .{token});
+        const cookies = try request.cookies();
+        std.log.debug("[session_manager.setSessionCookie] Cookies object retrieved", .{});
 
-        // Append to response headers
-        try request.response.headers.append("Set-Cookie", cookie_value);
+        try cookies.put(.{
+            .name = "session_token",
+            .value = token,
+            .path = "/",
+            .http_only = true,
+            .secure = true,
+            .same_site = .strict,
+            .max_age = self.config.session_ttl,
+        });
+        std.log.debug("[session_manager.setSessionCookie] Cookie 'session_token' set with value: '{s}', max_age: {}", .{ token, self.config.session_ttl });
     }
 
     pub fn clearSessionCookie(_: *SessionManager, request: *jetzig.Request) !void {
-        // Set an expired cookie to clear it
-        const cookie_value = "session_id=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Strict";
-        try request.response.headers.append("Set-Cookie", cookie_value);
+        const cookies = try request.cookies();
+        try cookies.put(.{
+            .name = "session_token",
+            .value = "",
+            .path = "/",
+            .http_only = true,
+            .secure = true,
+            .same_site = .strict,
+            .max_age = 0,
+        });
     }
 
-    pub fn getSessionTokenFromCookie(self: *SessionManager, request: *jetzig.Request) ?[]const u8 {
-        _ = self;
-        const cookie_header = request.headers.get("Cookie") orelse return null;
+    pub fn getSessionTokenFromCookie(_: *SessionManager, request: *jetzig.Request) !?[]const u8 {
+        std.log.debug("[session_manager.getSessionTokenFromCookie] Starting cookie retrieval", .{});
 
-        var cookie_iter = std.mem.tokenizeAny(u8, cookie_header, "; ");
-        while (cookie_iter.next()) |cookie| {
-            if (std.mem.startsWith(u8, cookie, "session_id=")) {
-                return cookie["session_id=".len..];
-            }
+        // Attempt to get the cookies object from the request
+        std.log.debug("[session_manager.getSessionTokenFromCookie] Calling request.cookies()", .{});
+        const cookies = try request.cookies();
+        std.log.debug("[session_manager.getSessionTokenFromCookie] Successfully retrieved cookies object", .{});
+
+        // Check if the session_token cookie exists
+        std.log.debug("[session_manager.getSessionTokenFromCookie] Looking for 'session_token' cookie", .{});
+        if (cookies.get("session_token")) |cookie| {
+            std.log.debug("[session_manager.getSessionTokenFromCookie] Found 'session_token' cookie with value: '{s}'", .{cookie.value});
+            std.log.debug("[session_manager.getSessionTokenFromCookie] Returning token: '{s}' (length: {})", .{ cookie.value, cookie.value.len });
+            return cookie.value;
+        } else {
+            std.log.debug("[session_manager.getSessionTokenFromCookie] No 'session_token' cookie found", .{});
+            std.log.debug("[session_manager.getSessionTokenFromCookie] Returning null", .{});
+            return null;
         }
-        return null;
     }
 
     pub fn cleanup(self: *SessionManager) !void {
         try self.storage.cleanupExpiredSessions();
-        // Add other cleanup tasks as needed
+        try self.clearSessionCookie();
     }
 };

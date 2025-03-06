@@ -9,27 +9,27 @@
       "protected_routes": [
         {
           "prefix": "/admin",
-          "strategy": "session",
+          "strategies": ["session", "oauth"],
           "required_roles": ["admin"]
         },
         {
           "prefix": "/api/private",
-          "strategy": "jwt",
+          "strategies": ["jwt"],
           "required_roles": ["api_user"]
         },
         {
           "prefix": "/api/webhook",
-          "strategy": "api_key",
+          "strategies": ["api_key"],
           "required_roles": null
         },
         {
           "prefix": "/user/profile",
-          "strategy": "session",
+          "strategies": ["session"],
           "required_roles": ["user"]
         },
         {
           "prefix": "/api/public",
-          "strategy": "jwt",
+          "strategies": ["jwt"],
           "required_roles": null
         }
       ],
@@ -66,9 +66,9 @@
     },
     "oauth": {
       "enabled": true,
-      "state_cookie_name": "oauth_state",
+      "state_cookie_name": "session_token",
       "state_cookie_max_age": 600,
-      "default_redirect": "/dashboard",
+      "default_redirect": "/admin/dashboard",
       "user_auto_create": true,
       "user_auto_login": true,
       "providers": [

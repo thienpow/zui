@@ -143,13 +143,13 @@ pub const AuthStrategy = enum {
     jwt, // JWT bearer token
     api_key, // API key
     basic, // HTTP Basic Auth
-    oauth,
+    oauth, // oauth2.0 support like google,github,X
     none, // No authentication (public route)
 };
 
 pub const ProtectedRoute = struct {
     prefix: []const u8,
-    strategy: AuthStrategy,
+    strategies: []const AuthStrategy,
     required_roles: ?[]const []const u8 = null, // Optional: roles required for access
 };
 

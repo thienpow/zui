@@ -27,17 +27,17 @@ pub const ConfigManager = struct {
                 .protected_routes = &[_]types.ProtectedRoute{
                     .{
                         .prefix = "/admin/",
-                        .strategy = .session,
+                        .strategies = &[_]types.AuthStrategy{ .session, .oauth },
                         .required_roles = &[_][]const u8{"admin"},
                     },
                     .{
                         .prefix = "/api/private/",
-                        .strategy = .jwt,
+                        .strategies = &[_]types.AuthStrategy{.jwt},
                         .required_roles = null,
                     },
                     .{
                         .prefix = "/api/webhook/",
-                        .strategy = .api_key,
+                        .strategies = &[_]types.AuthStrategy{.api_key},
                         .required_roles = null,
                     },
                 },
@@ -191,6 +191,20 @@ pub const ConfigManager = struct {
         std.log.scoped(.config).debug("[config.deinit] Cleaning up configuration manager resources", .{});
         // Free the allocated config_file_path
         self.allocator.free(self.config_file_path);
+        for (self.security_config.auth_middleware.protected_routes) |protected_route| {
+            self.allocator.free(protected_route.prefix);
+            if (protected_route.required_roles) |roles| {
+                for (roles) |role| {
+                    self.allocator.free(role);
+                }
+                self.allocator.free(roles);
+            }
+            self.allocator.free(protected_route.strategies);
+        }
+
+        self.allocator.free(self.security_config.auth_middleware.protected_routes);
+        self.allocator.free(self.security_config.auth_middleware.login_redirect_url);
+        self.allocator.free(self.security_config.auth_middleware.api_error_message);
 
         for (self.security_config.oauth.providers) |provider| {
             self.allocator.free(provider.name);
@@ -244,6 +258,7 @@ pub const ConfigManager = struct {
         if (std.mem.eql(u8, str, "jwt")) return .jwt;
         if (std.mem.eql(u8, str, "api_key")) return .api_key;
         if (std.mem.eql(u8, str, "basic")) return .basic;
+        if (std.mem.eql(u8, str, "oauth")) return .oauth;
         if (std.mem.eql(u8, str, "none")) return .none;
         std.log.scoped(.config).err("[config.parseAuthStrategy] Invalid auth strategy: '{s}'", .{str});
         return error.InvalidAuthStrategy;
@@ -323,11 +338,22 @@ pub const ConfigManager = struct {
                 if (middleware_json.object.get("protected_routes")) |routes_json| {
                     std.log.scoped(.config).debug("[config.load] Processing {d} protected routes", .{routes_json.array.items.len});
                     for (routes_json.array.items, 0..) |route_json, i| {
-                        const prefix = route_json.object.get("prefix").?.string;
-                        const strategy_str = route_json.object.get("strategy").?.string;
-                        const strategy = try parseAuthStrategy(strategy_str);
+                        const prefix = try self.allocator.dupe(u8, route_json.object.get("prefix").?.string);
 
-                        std.log.scoped(.config).debug("[config.load] Processing protected route {d}: prefix={s}, strategy={s}", .{ i, prefix, strategy_str });
+                        // ***** KEY CHANGE HERE *****
+                        var strategies = std.ArrayList(types.AuthStrategy).init(self.allocator); // Create a list for strategies.
+                        if (route_json.object.get("strategies")) |strategies_json| { // get the strategies.
+                            if (strategies_json.array.items.len > 0) {
+                                for (strategies_json.array.items) |strategy_json| {
+                                    const strategy = try parseAuthStrategy(strategy_json.string);
+                                    try strategies.append(strategy);
+                                }
+                            }
+                        }
+
+                        const strategies_slice = try strategies.toOwnedSlice(); // Convert to owned slice.
+
+                        std.log.scoped(.config).debug("[config.load] Processing protected route {d}: prefix={s}", .{ i, prefix });
 
                         var required_roles: ?[]const []const u8 = null;
                         if (route_json.object.get("required_roles")) |roles_json| {
@@ -344,8 +370,8 @@ pub const ConfigManager = struct {
                         }
 
                         try routes.append(.{
-                            .prefix = try self.allocator.dupe(u8, prefix),
-                            .strategy = strategy,
+                            .prefix = prefix,
+                            .strategies = strategies_slice, // Assign the slice of strategies
                             .required_roles = required_roles,
                         });
                     }

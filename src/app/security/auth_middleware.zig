@@ -52,17 +52,31 @@ pub const AuthMiddleware = struct {
             };
         };
 
-        // Apply appropriate authentication strategy
-        return switch (protected_route.strategy) {
-            .session => try self.authenticateWithSession(request, protected_route),
-            .jwt => try self.authenticateWithJWT(request, protected_route),
-            .api_key => try self.authenticateWithApiKey(request, protected_route),
-            .basic => try self.authenticateWithBasicAuth(request, protected_route),
-            .oauth => try self.authenticateWithOAuth(request, protected_route),
-            .none => AuthResult{
-                .authenticated = true,
-                .strategy_used = .none,
-            },
+        // Iterate through available strategies
+        for (protected_route.strategies) |strategy| {
+            const auth_result = switch (strategy) {
+                .session => try self.authenticateWithSession(request, protected_route),
+                .jwt => try self.authenticateWithJWT(request, protected_route),
+                .api_key => try self.authenticateWithApiKey(request, protected_route),
+                .basic => try self.authenticateWithBasicAuth(request, protected_route),
+                .oauth => try self.authenticateWithOAuth(request, protected_route),
+                .none => AuthResult{
+                    .authenticated = true,
+                    .strategy_used = .none,
+                },
+            };
+
+            // If a strategy succeeds, return immediately.
+            if (auth_result.authenticated) {
+                return auth_result;
+            }
+        }
+
+        // If no strategy succeeds, return an unauthenticated result.
+        return AuthResult{
+            .authenticated = false,
+            .errors = errors.SecurityError.UnauthorizedAccess, // Or a more specific error
+            .strategy_used = .none, // Indicate no strategy was successful
         };
     }
 
@@ -294,11 +308,23 @@ pub const AuthMiddleware = struct {
     }
 
     fn authenticateWithOAuth(_: *const AuthMiddleware, request: *jetzig.Request, route: ProtectedRoute) !AuthResult {
+        try request.server.logger.DEBUG("[auth:oauth] Starting OAuth authentication for route: {s}", .{request.path.path});
+
+        // Debug required roles if present
+        if (route.required_roles) |required_roles| {
+            for (required_roles) |role| {
+                try request.server.logger.DEBUG("[auth:oauth] Required role: {s}", .{role});
+            }
+        } else {
+            try request.server.logger.DEBUG("[auth:oauth] No roles required for this route", .{});
+        }
+
         // Get the session - OAuth works with sessions
+        try request.server.logger.DEBUG("[auth:oauth] Attempting to validate session", .{});
         const session = request.global.security.validateSession(request) catch |err| {
             // Same error handling logic as in authenticateWithSession
             const err_name = @errorName(err);
-            std.log.err("Session validation error: {s}", .{err_name});
+            try request.server.logger.ERROR("[auth:oauth] Session validation error: {s}", .{err_name});
 
             const mapped_error: errors.SecurityError = if (std.mem.eql(u8, err_name, "SessionBindingMismatch"))
                 errors.SecurityError.SessionBindingMismatch
@@ -318,8 +344,11 @@ pub const AuthMiddleware = struct {
             };
         };
 
+        try request.server.logger.DEBUG("[auth:oauth] Session validation successful, user_id: {d}", .{session.user_id});
+
         // Check if user is authenticated via OAuth
         if (session.user_id == 0) {
+            try request.server.logger.DEBUG("[auth:oauth] Invalid user_id (0) in session", .{});
             return AuthResult{
                 .authenticated = false,
                 .errors = errors.SecurityError.UnauthorizedAccess,
@@ -329,8 +358,14 @@ pub const AuthMiddleware = struct {
 
         // Check required roles if specified
         if (route.required_roles) |required_roles| {
+            try request.server.logger.DEBUG("[auth:oauth] Checking for required roles", .{});
+
+            // Use hasRequiredRoles directly
             const has_required_role = try request.global.security.hasRequiredRoles(session.user_id, required_roles);
+            try request.server.logger.DEBUG("[auth:oauth] Has required roles: {}", .{has_required_role});
+
             if (!has_required_role) {
+                try request.server.logger.DEBUG("[auth:oauth] User lacks required roles", .{});
                 return AuthResult{
                     .authenticated = true,
                     .user_id = session.user_id,
@@ -338,8 +373,11 @@ pub const AuthMiddleware = struct {
                     .strategy_used = .oauth,
                 };
             }
+        } else {
+            try request.server.logger.DEBUG("[auth:oauth] No role requirements for this route", .{});
         }
 
+        try request.server.logger.DEBUG("[auth:oauth] Authentication successful", .{});
         return AuthResult{
             .authenticated = true,
             .user_id = session.user_id,

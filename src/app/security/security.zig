@@ -449,11 +449,13 @@ pub const Security = struct {
 
     pub fn validateSession(self: *Security, request: *jetzig.Request) !Session {
         // Get the session token from the cookie
-        const token = self.session.getSessionTokenFromCookie(request) orelse
+        std.log.debug("[security.validateSession] calling getSessionTokenFromCookie: ", .{});
+        const token = (try self.session.getSessionTokenFromCookie(request)) orelse
             return SecurityError.UnauthorizedAccess;
 
         //const token = self.getAuthToken(request) orelse return SecurityError.UnauthorizedAccess;
 
+        std.log.debug("[security.validateSession] calling session.validate: ", .{});
         const session = try self.session.validate(token, request);
 
         // Validate IP and User-Agent binding
@@ -538,46 +540,40 @@ pub const Security = struct {
     }
 
     pub fn handleOAuthCallback(self: *Security, provider_id: []const u8, code: []const u8, state: []const u8, request: *jetzig.Request) !AuthResult {
-        // 1. Verify state parameter
-        const cookies = try request.cookies();
+        _ = state;
 
-        // Get the stored state cookie
-        const stored_state = blk: {
-            if (cookies.get(self.oauth.config.state_cookie_name)) |cookie| {
-                break :blk cookie.value;
-            } else {
-                break :blk null;
-            }
-        };
-
-        if (stored_state == null or !std.mem.eql(u8, stored_state.?, state)) {
-            return AuthResult{
-                .authenticated = false,
-                .errors = errors.SecurityError.InvalidToken,
-                .strategy_used = .oauth,
-            };
-        }
-
-        // Clear state cookie
-        try cookies.put(.{
-            .name = self.oauth.config.state_cookie_name,
-            .value = "",
-            .max_age = 0,
-        });
-
-        // 2. Exchange code for token
+        // 1. Exchange code for token
         var provider = try self.oauth.getProvider(provider_id);
         const token = try provider.exchangeCodeForToken(code);
 
-        // 3. Get user info
+        // 2. Get user info from OAuth provider
         const user_info = try provider.getUserInfo(token);
 
-        // 4. Find or create user in database
+        // 3. Find or create user in database
         const user_id = try self.findOrCreateOAuthUser(provider_id, user_info);
 
+        // 4. Construct User struct for session creation
+        const client_ip = ip_utils.getClientIp(request);
+        const user_agent = request.headers.get("User-Agent") orelse "unknown";
+        const device_id = null; // Adjust if you can derive this from user_info or request
+
+        // Assuming user_info provides email and you fetch additional user data
+        // If findOrCreateOAuthUser returns a full User object, use that instead
+        const user = User{
+            .id = @intCast(user_id), // Ensure type matches your User.id (e.g., u64)
+            .email = user_info.email orelse "unknown@example.com", // Adjust based on user_info fields
+            //.roles = null, // Uncomment and populate if available from user_info or DB
+            .is_active = true, // Assume active for new OAuth users, or fetch from DB
+            .is_banned = false, // Assume not banned, or fetch from DB
+            .last_ip = client_ip,
+            .last_user_agent = user_agent,
+            .device_id = device_id,
+            .last_login_at = std.time.timestamp(),
+        };
+
         // 5. Create session
-        const session = try request.session();
-        try session.put("user_id", user_id);
+        const session = try self.session.create(user, request);
+        std.log.debug("[security.handleOAuthCallback] Created session with token: '{s}' for user_id: {}", .{ session.token, user_id });
 
         // 6. Return success
         return AuthResult{
