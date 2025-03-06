@@ -19,6 +19,13 @@ pub fn build(b: *std.Build) !void {
     //
     // ^ Add all dependencies before `jetzig.jetzigInit()` ^
 
+    // Add the HTTP dependency
+    // const httpz_dep = b.dependency("httpz", .{
+    //     .target = target,
+    //     .optimize = optimize,
+    // });
+    // exe.root_module.addImport("httpz", httpz_dep.module("httpz"));
+
     try jetzig.jetzigInit(b, exe, .{});
 
     b.installArtifact(exe);

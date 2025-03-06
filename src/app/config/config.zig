@@ -76,6 +76,28 @@ pub const ConfigManager = struct {
                 .store_type = .both,
                 .log_retention_days = 90,
             },
+            .oauth = .{
+                .enabled = false,
+                .providers = &[_]security.OAuthProviderConfig{
+                    .{
+                        .provider = .google,
+                        .name = "Google",
+                        .client_id = "YOUR_GOOGLE_CLIENT_ID",
+                        .client_secret = "YOUR_GOOGLE_CLIENT_SECRET",
+                        .auth_url = "https://accounts.google.com/o/oauth2/v2/auth",
+                        .token_url = "https://oauth2.googleapis.com/token",
+                        .userinfo_url = "https://www.googleapis.com/oauth2/v3/userinfo",
+                        .redirect_uri = "http://localhost:8000/auth/oauth/callback/google",
+                        .scope = "email profile",
+                        .enabled = false,
+                    },
+                },
+                .state_cookie_name = "oauth_state",
+                .state_cookie_max_age = 600, // 10 minutes
+                .default_redirect = "/dashboard",
+                .user_auto_create = true,
+                .user_auto_login = true,
+            },
         };
 
         // 1. Try to get the executable directory
@@ -169,6 +191,29 @@ pub const ConfigManager = struct {
         std.log.scoped(.config).debug("[config.deinit] Cleaning up configuration manager resources", .{});
         // Free the allocated config_file_path
         self.allocator.free(self.config_file_path);
+
+        for (self.security_config.oauth.providers) |provider| {
+            self.allocator.free(provider.name);
+            self.allocator.free(provider.client_id);
+            self.allocator.free(provider.client_secret);
+            self.allocator.free(provider.auth_url);
+            self.allocator.free(provider.token_url);
+            self.allocator.free(provider.userinfo_url);
+            self.allocator.free(provider.redirect_uri);
+            self.allocator.free(provider.scope);
+
+            if (provider.custom_provider_id) |id| {
+                self.allocator.free(id);
+            }
+        }
+
+        if (self.security_config.oauth.providers.len > 0) {
+            self.allocator.free(self.security_config.oauth.providers);
+        }
+
+        self.allocator.free(self.security_config.oauth.state_cookie_name);
+        self.allocator.free(self.security_config.oauth.default_redirect);
+
         std.log.scoped(.config).debug("[config.deinit] Configuration manager resources freed", .{});
     }
 
@@ -213,6 +258,18 @@ pub const ConfigManager = struct {
         // Add all other values...
         std.log.scoped(.config).err("[config.parseSecurityEvent] Invalid security event: '{s}'", .{str});
         return error.InvalidSecurityEvent;
+    }
+
+    fn parseOAuthProvider(str: []const u8) !types.OAuthProvider {
+        std.log.scoped(.config).debug("[config.parseOAuthProvider] Parsing OAuth provider: '{s}'", .{str});
+        if (std.mem.eql(u8, str, "google")) return .google;
+        if (std.mem.eql(u8, str, "github")) return .github;
+        if (std.mem.eql(u8, str, "facebook")) return .facebook;
+        if (std.mem.eql(u8, str, "microsoft")) return .microsoft;
+        if (std.mem.eql(u8, str, "apple")) return .apple;
+        if (std.mem.eql(u8, str, "custom")) return .custom;
+        std.log.scoped(.config).err("[config.parseOAuthProvider] Invalid OAuth provider: '{s}'", .{str});
+        return error.InvalidOAuthProvider;
     }
 
     pub fn load(self: *Self) !void {
@@ -456,6 +513,101 @@ pub const ConfigManager = struct {
 
                     self.security_config.audit.high_risk_events = try events.toOwnedSlice();
                     std.log.scoped(.config).debug("[config.load] Set {d} high risk events", .{self.security_config.audit.high_risk_events.len});
+                }
+            }
+
+            std.log.scoped(.config).debug("[config.load] Processing OAuth configuration", .{});
+            if (security_json.object.get("oauth")) |oauth_json| {
+                // Parse enabled flag
+                if (oauth_json.object.get("enabled")) |enabled_json| {
+                    self.security_config.oauth.enabled = enabled_json.bool;
+                    std.log.scoped(.config).debug("[config.load] Set OAuth enabled: {}", .{self.security_config.oauth.enabled});
+                }
+
+                // Parse state cookie info
+                if (oauth_json.object.get("state_cookie_name")) |cookie_name_json| {
+                    self.security_config.oauth.state_cookie_name =
+                        try self.allocator.dupe(u8, cookie_name_json.string);
+                    std.log.scoped(.config).debug("[config.load] Set OAuth state cookie name: {s}", .{self.security_config.oauth.state_cookie_name});
+                }
+
+                if (oauth_json.object.get("state_cookie_max_age")) |max_age_json| {
+                    self.security_config.oauth.state_cookie_max_age = @intCast(max_age_json.integer);
+                    std.log.scoped(.config).debug("[config.load] Set OAuth state cookie max age: {d} seconds", .{self.security_config.oauth.state_cookie_max_age});
+                }
+
+                // Parse default redirect
+                if (oauth_json.object.get("default_redirect")) |redirect_json| {
+                    self.security_config.oauth.default_redirect =
+                        try self.allocator.dupe(u8, redirect_json.string);
+                    std.log.scoped(.config).debug("[config.load] Set OAuth default redirect: {s}", .{self.security_config.oauth.default_redirect});
+                }
+
+                // Parse user auto create/login flags
+                if (oauth_json.object.get("user_auto_create")) |auto_create_json| {
+                    self.security_config.oauth.user_auto_create = auto_create_json.bool;
+                    std.log.scoped(.config).debug("[config.load] Set OAuth user auto create: {}", .{self.security_config.oauth.user_auto_create});
+                }
+
+                if (oauth_json.object.get("user_auto_login")) |auto_login_json| {
+                    self.security_config.oauth.user_auto_login = auto_login_json.bool;
+                    std.log.scoped(.config).debug("[config.load] Set OAuth user auto login: {}", .{self.security_config.oauth.user_auto_login});
+                }
+
+                // Parse OAuth providers
+                if (oauth_json.object.get("providers")) |providers_json| {
+                    std.log.scoped(.config).debug("[config.load] Processing {d} OAuth providers", .{providers_json.array.items.len});
+
+                    var providers = std.ArrayList(security.OAuthProviderConfig).init(self.allocator);
+                    defer providers.deinit();
+
+                    for (providers_json.array.items, 0..) |provider_json, i| {
+                        std.log.scoped(.config).debug("[config.load] Processing OAuth provider {d}", .{i});
+
+                        // Required fields
+                        const provider_type_str = provider_json.object.get("provider").?.string;
+                        const provider_type = try parseOAuthProvider(provider_type_str);
+                        const name = try self.allocator.dupe(u8, provider_json.object.get("name").?.string);
+                        const client_id = try self.allocator.dupe(u8, provider_json.object.get("client_id").?.string);
+                        const client_secret = try self.allocator.dupe(u8, provider_json.object.get("client_secret").?.string);
+                        const auth_url = try self.allocator.dupe(u8, provider_json.object.get("auth_url").?.string);
+                        const token_url = try self.allocator.dupe(u8, provider_json.object.get("token_url").?.string);
+                        const userinfo_url = try self.allocator.dupe(u8, provider_json.object.get("userinfo_url").?.string);
+                        const redirect_uri = try self.allocator.dupe(u8, provider_json.object.get("redirect_uri").?.string);
+                        const scope = try self.allocator.dupe(u8, provider_json.object.get("scope").?.string);
+
+                        // Optional fields
+                        var enabled = true;
+                        if (provider_json.object.get("enabled")) |enabled_json| {
+                            enabled = enabled_json.bool;
+                        }
+
+                        var custom_provider_id: ?[]const u8 = null;
+                        if (provider_json.object.get("custom_provider_id")) |id_json| {
+                            if (id_json != .null) {
+                                custom_provider_id = try self.allocator.dupe(u8, id_json.string);
+                            }
+                        }
+
+                        try providers.append(.{
+                            .provider = provider_type,
+                            .name = name,
+                            .client_id = client_id,
+                            .client_secret = client_secret,
+                            .auth_url = auth_url,
+                            .token_url = token_url,
+                            .userinfo_url = userinfo_url,
+                            .redirect_uri = redirect_uri,
+                            .scope = scope,
+                            .enabled = enabled,
+                            .custom_provider_id = custom_provider_id,
+                        });
+
+                        std.log.scoped(.config).debug("[config.load] Added OAuth provider: {s}", .{name});
+                    }
+
+                    self.security_config.oauth.providers = try providers.toOwnedSlice();
+                    std.log.scoped(.config).debug("[config.load] Processed {d} OAuth providers total", .{self.security_config.oauth.providers.len});
                 }
             }
         } else {

@@ -1,3 +1,5 @@
+const errors = @import("errors.zig");
+
 pub const SecurityEvent = enum {
     // Authentication events
     credential_check,
@@ -125,7 +127,7 @@ pub const Tokens = struct {
     csrf: []const u8,
 };
 
-pub const AuthResult = struct {
+pub const AuthenticationCredentials = struct {
     session: Session,
     user: User,
     tokens: Tokens,
@@ -141,6 +143,7 @@ pub const AuthStrategy = enum {
     jwt, // JWT bearer token
     api_key, // API key
     basic, // HTTP Basic Auth
+    oauth,
     none, // No authentication (public route)
 };
 
@@ -148,4 +151,21 @@ pub const ProtectedRoute = struct {
     prefix: []const u8,
     strategy: AuthStrategy,
     required_roles: ?[]const []const u8 = null, // Optional: roles required for access
+};
+
+pub const OAuthProvider = enum {
+    google,
+    github,
+    facebook,
+    microsoft,
+    apple,
+    custom,
+};
+
+pub const AuthResult = struct {
+    authenticated: bool,
+    user_id: ?u64 = null,
+    roles: ?[]const []const u8 = null,
+    strategy_used: ?AuthStrategy = null,
+    errors: ?errors.SecurityError = null,
 };

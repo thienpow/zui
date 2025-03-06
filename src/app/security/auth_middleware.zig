@@ -9,17 +9,10 @@ const errors = @import("errors.zig");
 const types = @import("types.zig");
 const ProtectedRoute = types.ProtectedRoute;
 const AuthStrategy = types.AuthStrategy;
+const AuthResult = types.AuthResult;
 
 const config = @import("config.zig");
 const AuthMiddlewareConfig = config.AuthMiddlewareConfig;
-
-pub const AuthResult = struct {
-    authenticated: bool,
-    user_id: ?u64 = null,
-    roles: ?[]const []const u8 = null,
-    strategy_used: ?AuthStrategy = null,
-    errors: ?errors.SecurityError = null,
-};
 
 pub const AuthMiddleware = struct {
     config: AuthMiddlewareConfig,
@@ -65,6 +58,7 @@ pub const AuthMiddleware = struct {
             .jwt => try self.authenticateWithJWT(request, protected_route),
             .api_key => try self.authenticateWithApiKey(request, protected_route),
             .basic => try self.authenticateWithBasicAuth(request, protected_route),
+            .oauth => try self.authenticateWithOAuth(request, protected_route),
             .none => AuthResult{
                 .authenticated = true,
                 .strategy_used = .none,
@@ -296,6 +290,60 @@ pub const AuthMiddleware = struct {
             .authenticated = true,
             .user_id = auth_result.user.id,
             .strategy_used = .basic,
+        };
+    }
+
+    fn authenticateWithOAuth(_: *const AuthMiddleware, request: *jetzig.Request, route: ProtectedRoute) !AuthResult {
+        // Get the session - OAuth works with sessions
+        const session = request.global.security.validateSession(request) catch |err| {
+            // Same error handling logic as in authenticateWithSession
+            const err_name = @errorName(err);
+            std.log.err("Session validation error: {s}", .{err_name});
+
+            const mapped_error: errors.SecurityError = if (std.mem.eql(u8, err_name, "SessionBindingMismatch"))
+                errors.SecurityError.SessionBindingMismatch
+            else if (std.mem.eql(u8, err_name, "UnauthorizedAccess"))
+                errors.SecurityError.UnauthorizedAccess
+            else if (std.mem.eql(u8, err_name, "SessionExpired"))
+                errors.SecurityError.SessionExpired
+            else if (std.mem.eql(u8, err_name, "ValidationError"))
+                errors.SecurityError.ValidationError
+            else
+                errors.SecurityError.UnauthorizedAccess;
+
+            return AuthResult{
+                .authenticated = false,
+                .errors = mapped_error,
+                .strategy_used = .oauth,
+            };
+        };
+
+        // Check if user is authenticated via OAuth
+        if (session.user_id == 0) {
+            return AuthResult{
+                .authenticated = false,
+                .errors = errors.SecurityError.UnauthorizedAccess,
+                .strategy_used = .oauth,
+            };
+        }
+
+        // Check required roles if specified
+        if (route.required_roles) |required_roles| {
+            const has_required_role = try request.global.security.hasRequiredRoles(session.user_id, required_roles);
+            if (!has_required_role) {
+                return AuthResult{
+                    .authenticated = true,
+                    .user_id = session.user_id,
+                    .errors = errors.SecurityError.UnauthorizedAccess,
+                    .strategy_used = .oauth,
+                };
+            }
+        }
+
+        return AuthResult{
+            .authenticated = true,
+            .user_id = session.user_id,
+            .strategy_used = .oauth,
         };
     }
 

@@ -14,6 +14,7 @@ pub const SecurityConfig = struct {
     tokens: TokenConfig,
     rate_limit: RateLimitConfig,
     audit: AuditLogConfig,
+    oauth: OAuthConfig,
 
     pub fn validate(self: SecurityConfig) !void {
         if (self.session.session_ttl <= 0) return error.InvalidSessionTTL;
@@ -74,4 +75,29 @@ pub const AuthMiddlewareConfig = struct {
 
     /// Custom response for API authentication failures
     api_error_message: []const u8 = "Unauthorized access",
+};
+
+pub const OAuthProviderConfig = struct {
+    provider: types.OAuthProvider,
+    name: []const u8,
+    client_id: []const u8,
+    client_secret: []const u8,
+    auth_url: []const u8,
+    token_url: []const u8,
+    userinfo_url: []const u8,
+    redirect_uri: []const u8,
+    scope: []const u8,
+    enabled: bool = true,
+    // Optional fields for custom providers
+    custom_provider_id: ?[]const u8 = null,
+};
+
+pub const OAuthConfig = struct {
+    enabled: bool = false,
+    providers: []const OAuthProviderConfig = &.{},
+    state_cookie_name: []const u8 = "oauth_state",
+    state_cookie_max_age: i32 = 600, // 10 minutes
+    default_redirect: []const u8 = "/dashboard",
+    user_auto_create: bool = true,
+    user_auto_login: bool = true,
 };

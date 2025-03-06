@@ -9,7 +9,7 @@
     .htmx-request .htmx-indicator {
         display: block;
     }
-    .htmx-request.auth-button {
+    .htmx-request.button {
         opacity: 0.5;
         pointer-events: none;
     }
@@ -230,7 +230,7 @@
         transform: rotate(45deg);
     }
 
-    .auth-button {
+    .button {
         display: flex;
         align-items: center;
         justify-content: center;
@@ -247,7 +247,7 @@
         transition: all 0.2s;
     }
 
-    .auth-button:hover {
+    .button:hover {
         opacity: 0.9;
         transform: translateY(-1px);
     }
@@ -272,6 +272,58 @@
 
     .auth-footer a:hover {
         text-decoration: underline;
+    }
+
+/* below is all for oauth, but it should follow the theme above... maybe btn-oauth should be removed */
+
+    .btn-google {
+      background-color: white;
+      color: #757575;
+      border: 1px solid #ddd;
+    }
+
+    .btn-google:hover {
+      background-color: #f5f5f5;
+    }
+
+    .btn-github {
+      background-color: #24292e;
+      color: white;
+      border: 1px solid #24292e;
+    }
+
+    .btn-github:hover {
+      background-color: #2f363d;
+    }
+
+    .oauth-providers {
+      margin-top: 24px;
+      text-align: center;
+    }
+
+    .oauth-providers h3 {
+      margin-bottom: 16px;
+      font-size: 14px;
+      color: #666;
+      position: relative;
+    }
+
+    .oauth-providers h3:before,
+    .oauth-providers h3:after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      width: 30%;
+      height: 1px;
+      background-color: #ddd;
+    }
+
+    .oauth-providers h3:before {
+      left: 0;
+    }
+
+    .oauth-providers h3:after {
+      right: 0;
     }
 
     /* Media Queries */

@@ -11,16 +11,18 @@ const RedisClientConfig = redis.RedisClientConfig;
 // Internal module imports
 
 const types = @import("types.zig");
+const AuthResult = types.AuthResult;
 const Severity = types.Severity;
 const SecurityEvent = types.SecurityEvent;
 const Session = types.Session;
 const User = types.User;
-const AuthResult = types.AuthResult;
+const AuthenticationCredentials = types.AuthenticationCredentials;
 const Credentials = types.Credentials;
 const ErrorDetails = types.ErrorDetails;
 
 const config = @import("config.zig");
 const AuthMiddlewareConfig = config.AuthMiddlewareConfig;
+const OAuthConfig = config.OAuthConfig;
 const SecurityConfig = config.SecurityConfig;
 
 const errors = @import("errors.zig");
@@ -37,6 +39,9 @@ const TokenManager = @import("token_manager.zig").TokenManager;
 const RateLimiter = @import("rate_limiter.zig").RateLimiter;
 const validation = @import("validation.zig");
 
+const oauth_provider = @import("oauth_provider.zig");
+const OAuthManager = oauth_provider.OAuthManager;
+
 // Re-export common types and configurations
 pub usingnamespace types;
 pub usingnamespace config;
@@ -49,6 +54,7 @@ pub const Security = struct {
     tokens: TokenManager,
     rate_limiter: RateLimiter,
     auth_middleware: AuthMiddleware,
+    oauth: OAuthManager,
 
     pub fn init(allocator: std.mem.Allocator, security_config: SecurityConfig, redis_pool: *PooledRedisClient) !Security {
         return Security{
@@ -82,6 +88,10 @@ pub const Security = struct {
             .rate_limiter = RateLimiter{
                 .config = security_config.rate_limit,
                 .redis_pool = redis_pool,
+            },
+            .oauth = OAuthManager{
+                .allocator = allocator,
+                .config = security_config.oauth,
             },
         };
     }
@@ -207,7 +217,7 @@ pub const Security = struct {
     //     }
     // }
 
-    pub fn authenticate(self: *Security, request: *jetzig.Request, credentials: Credentials) !AuthResult {
+    pub fn authenticate(self: *Security, request: *jetzig.Request, credentials: Credentials) !AuthenticationCredentials {
         std.log.debug("[security.authenticate] Starting authentication", .{});
 
         const client_ip = ip_utils.getClientIp(request);
@@ -277,7 +287,7 @@ pub const Security = struct {
         try self.rate_limiter.reset(client_ip);
 
         std.log.debug("[security.authenticate] Authentication successful", .{});
-        return AuthResult{
+        return AuthenticationCredentials{
             .session = session,
             .user = auth_result.user,
             .tokens = tokens,
@@ -503,5 +513,92 @@ pub const Security = struct {
         _ = api_key;
         // This is a stub - implement according to your API key system
         return error.NotImplemented;
+    }
+
+    pub fn getOAuthLoginUrl(self: *Security, provider_id: []const u8, request: *jetzig.Request) ![]const u8 {
+        var provider = try self.oauth.getProvider(provider_id);
+
+        // Generate state parameter for CSRF protection
+        const state = try self.oauth.generateState();
+
+        // Store state in a cookie
+        const cookies = try request.cookies();
+        try cookies.put(.{
+            .name = self.oauth.config.state_cookie_name,
+            .value = state,
+            .path = "/",
+            .http_only = true,
+            .secure = true,
+            .same_site = .lax,
+            .max_age = self.oauth.config.state_cookie_max_age,
+        });
+
+        // Generate and return OAuth login URL
+        return try provider.getAuthorizationUrl(state);
+    }
+
+    pub fn handleOAuthCallback(self: *Security, provider_id: []const u8, code: []const u8, state: []const u8, request: *jetzig.Request) !AuthResult {
+        // 1. Verify state parameter
+        const cookies = try request.cookies();
+
+        // Get the stored state cookie
+        const stored_state = blk: {
+            if (cookies.get(self.oauth.config.state_cookie_name)) |cookie| {
+                break :blk cookie.value;
+            } else {
+                break :blk null;
+            }
+        };
+
+        if (stored_state == null or !std.mem.eql(u8, stored_state.?, state)) {
+            return AuthResult{
+                .authenticated = false,
+                .errors = errors.SecurityError.InvalidToken,
+                .strategy_used = .oauth,
+            };
+        }
+
+        // Clear state cookie
+        try cookies.put(.{
+            .name = self.oauth.config.state_cookie_name,
+            .value = "",
+            .max_age = 0,
+        });
+
+        // 2. Exchange code for token
+        var provider = try self.oauth.getProvider(provider_id);
+        const token = try provider.exchangeCodeForToken(code);
+
+        // 3. Get user info
+        const user_info = try provider.getUserInfo(token);
+
+        // 4. Find or create user in database
+        const user_id = try self.findOrCreateOAuthUser(provider_id, user_info);
+
+        // 5. Create session
+        const session = try request.session();
+        try session.put("user_id", user_id);
+
+        // 6. Return success
+        return AuthResult{
+            .authenticated = true,
+            .user_id = user_id,
+            .strategy_used = .oauth,
+        };
+    }
+
+    // Helper method to find or create user from OAuth profile
+    fn findOrCreateOAuthUser(self: *Security, provider_id: []const u8, user_info: oauth_provider.OAuthUserInfo) !u64 {
+        // Implementation depends on your database structure
+        // Typically you would:
+        // 1. Check if a user with this provider ID and external ID exists
+        // 2. If yes, return that user's ID
+        // 3. If no, create a new user and link the OAuth account
+
+        // Placeholder implementation
+        _ = self;
+        _ = provider_id;
+        _ = user_info;
+        return 1; // Dummy user ID
     }
 };
