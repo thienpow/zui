@@ -3,3 +3,4 @@ zig-cache/
 *.core
 .jetzig
 .zig-cache/
+src/app/config/config.json.test
