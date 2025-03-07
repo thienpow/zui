@@ -5,7 +5,7 @@
     "max_connections": 10
   },
   "security": {
-    "auth_middleware": {
+    "middleware": {
       "protected_routes": [
         {
           "prefix": "/admin",
@@ -39,6 +39,7 @@
     },
     "session": {
       "max_sessions_per_user": 5,
+      "cookie_name": "session_token",
       "session_ttl": 86400,
       "refresh_threshold": 3600,
       "cleanup_interval": 3600
@@ -47,7 +48,7 @@
       "storage_type": "both",
       "cleanup_batch_size": 1000
     },
-    "tokens": {
+    "token": {
       "access_token_ttl": 900,
       "refresh_token_ttl": 604800,
       "token_length": 48

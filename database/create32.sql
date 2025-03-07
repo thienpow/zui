@@ -93,7 +93,7 @@ CREATE TABLE user_sessions (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Password Reset Tokens
+-- Password Reset
 CREATE TABLE password_resets (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL,

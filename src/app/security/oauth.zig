@@ -5,6 +5,10 @@ const Header = http.Header;
 const http_utils = @import("../utils/http.zig");
 const config = @import("config.zig");
 const types = @import("types.zig");
+const ip_utils = @import("../utils/ip.zig");
+const Security = @import("security.zig").Security;
+const AuthResult = @import("types.zig").AuthResult;
+const User = @import("types.zig").User;
 
 pub const OAuthError = error{
     ProviderNotFound,
@@ -439,5 +443,71 @@ pub const OAuthManager = struct {
         var random_bytes: [16]u8 = undefined;
         std.crypto.random.bytes(&random_bytes);
         return try std.fmt.allocPrint(self.allocator, "{x}", .{std.fmt.fmtSliceHexLower(&random_bytes)});
+    }
+
+    pub fn getOAuthLoginUrl(self: *OAuthManager, provider_id: []const u8, request: *jetzig.Request) ![]const u8 {
+        var provider = try self.getProvider(provider_id);
+        const state = try self.generateState();
+
+        // Store state in a cookie
+        const cookies = try request.cookies();
+        try cookies.put(.{
+            .name = self.config.state_cookie_name,
+            .value = state,
+            .path = "/",
+            .http_only = true,
+            .secure = true,
+            .same_site = .lax,
+            .max_age = self.config.state_cookie_max_age,
+        });
+
+        return try provider.getAuthorizationUrl(state);
+    }
+
+    pub fn handleOAuthCallback(
+        self: *OAuthManager,
+        provider_id: []const u8,
+        code: []const u8,
+        state: []const u8,
+        request: *jetzig.Request,
+    ) !AuthResult {
+        _ = state; // Validate state here if needed
+
+        var provider = try self.getProvider(provider_id);
+        const token = try provider.exchangeCodeForToken(code);
+        const user_info = try provider.getUserInfo(token);
+
+        const user_id = try self.findOrCreateOAuthUser(provider_id, user_info);
+
+        const client_ip = ip_utils.getClientIp(request);
+        const user_agent = request.headers.get("User-Agent") orelse "unknown";
+        const device_id = null;
+
+        const user = User{
+            .id = @intCast(user_id),
+            .email = user_info.email orelse "unknown@example.com",
+            .is_active = true,
+            .is_banned = false,
+            .last_ip = client_ip,
+            .last_user_agent = user_agent,
+            .device_id = device_id,
+            .last_login_at = std.time.timestamp(),
+        };
+
+        const session = try request.global.security.session.create(user, request);
+        std.log.debug("[oauth.handleOAuthCallback] Created session with token: '{s}' for user_id: {}", .{ session.token, user_id });
+
+        return AuthResult{
+            .authenticated = true,
+            .user_id = user_id,
+            .strategy_used = .oauth,
+        };
+    }
+
+    fn findOrCreateOAuthUser(self: *OAuthManager, provider_id: []const u8, user_info: OAuthUserInfo) !u64 {
+        _ = self;
+        _ = provider_id;
+        _ = user_info;
+        return 1; // Implement DB logic here
     }
 };

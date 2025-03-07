@@ -1,10 +1,10 @@
 const std = @import("std");
 const jetzig = @import("jetzig");
 const security = @import("security.zig");
-const token_manager = @import("token_manager.zig");
 
 const http_utils = @import("../utils/http.zig");
 const errors = @import("errors.zig");
+const SecurityError = errors.SecurityError;
 
 const types = @import("types.zig");
 const ProtectedRoute = types.ProtectedRoute;
@@ -75,7 +75,7 @@ pub const AuthMiddleware = struct {
         // If no strategy succeeds, return an unauthenticated result.
         return AuthResult{
             .authenticated = false,
-            .errors = errors.SecurityError.UnauthorizedAccess, // Or a more specific error
+            .errors = SecurityError.UnauthorizedAccess, // Or a more specific error
             .strategy_used = .none, // Indicate no strategy was successful
         };
     }
@@ -87,16 +87,16 @@ pub const AuthMiddleware = struct {
             std.log.err("Session validation error: {s}", .{err_name});
 
             // Map common errors we expect
-            const mapped_error: errors.SecurityError = if (std.mem.eql(u8, err_name, "SessionBindingMismatch"))
-                errors.SecurityError.SessionBindingMismatch
+            const mapped_error: SecurityError = if (std.mem.eql(u8, err_name, "SessionBindingMismatch"))
+                SecurityError.SessionBindingMismatch
             else if (std.mem.eql(u8, err_name, "UnauthorizedAccess"))
-                errors.SecurityError.UnauthorizedAccess
+                SecurityError.UnauthorizedAccess
             else if (std.mem.eql(u8, err_name, "SessionExpired"))
-                errors.SecurityError.SessionExpired
+                SecurityError.SessionExpired
             else if (std.mem.eql(u8, err_name, "ValidationError"))
-                errors.SecurityError.ValidationError
+                SecurityError.ValidationError
             else
-                errors.SecurityError.UnauthorizedAccess;
+                SecurityError.UnauthorizedAccess;
 
             return AuthResult{
                 .authenticated = false,
@@ -112,7 +112,7 @@ pub const AuthMiddleware = struct {
                 return AuthResult{
                     .authenticated = true,
                     .user_id = session.user_id,
-                    .errors = errors.SecurityError.UnauthorizedAccess,
+                    .errors = SecurityError.UnauthorizedAccess,
                     .strategy_used = .session,
                 };
             }
@@ -131,7 +131,7 @@ pub const AuthMiddleware = struct {
         const auth_header = request.headers.get("Authorization") orelse {
             return AuthResult{
                 .authenticated = false,
-                .errors = errors.SecurityError.UnauthorizedAccess,
+                .errors = SecurityError.UnauthorizedAccess,
                 .strategy_used = .jwt,
             };
         };
@@ -140,7 +140,7 @@ pub const AuthMiddleware = struct {
         if (!std.mem.startsWith(u8, auth_header, "Bearer ")) {
             return AuthResult{
                 .authenticated = false,
-                .errors = errors.SecurityError.InvalidToken,
+                .errors = SecurityError.InvalidToken,
                 .strategy_used = .jwt,
             };
         }
@@ -148,19 +148,12 @@ pub const AuthMiddleware = struct {
         const token = auth_header[7..];
 
         // Validate token
-        const session = request.global.security.tokens.validateAccessToken(token) catch |err| {
+        const session = request.global.security.token.validateAccessToken(token) catch {
             // Map token errors to SecurityError
-            const security_error = switch (err) {
-                token_manager.TokenError.InvalidToken => errors.SecurityError.InvalidToken,
-                token_manager.TokenError.ExpiredToken => errors.SecurityError.SessionExpired,
-                token_manager.TokenError.TokenGenerationFailed => errors.SecurityError.InternalError,
-                token_manager.TokenError.StorageError => errors.SecurityError.InternalError,
-                else => errors.SecurityError.UnauthorizedAccess,
-            };
 
             return AuthResult{
                 .authenticated = false,
-                .errors = security_error,
+                .errors = SecurityError.InvalidToken,
                 .strategy_used = .jwt,
             };
         };
@@ -172,7 +165,7 @@ pub const AuthMiddleware = struct {
                 return AuthResult{
                     .authenticated = true,
                     .user_id = session.user_id,
-                    .errors = errors.SecurityError.UnauthorizedAccess,
+                    .errors = SecurityError.UnauthorizedAccess,
                     .strategy_used = .jwt,
                 };
             }
@@ -191,7 +184,7 @@ pub const AuthMiddleware = struct {
         const api_key = request.headers.get("X-API-Key") orelse {
             return AuthResult{
                 .authenticated = false,
-                .errors = errors.SecurityError.UnauthorizedAccess,
+                .errors = SecurityError.UnauthorizedAccess,
                 .strategy_used = .api_key,
             };
         };
@@ -203,16 +196,16 @@ pub const AuthMiddleware = struct {
             std.log.err("API key validation error: {s}", .{err_name});
 
             // Map common errors based on error name
-            const mapped_error: errors.SecurityError = if (std.mem.eql(u8, err_name, "InvalidInput"))
-                errors.SecurityError.InvalidInput
+            const mapped_error: SecurityError = if (std.mem.eql(u8, err_name, "InvalidInput"))
+                SecurityError.InvalidInput
             else if (std.mem.eql(u8, err_name, "InvalidToken"))
-                errors.SecurityError.InvalidToken
+                SecurityError.InvalidToken
             else if (std.mem.eql(u8, err_name, "UnauthorizedAccess"))
-                errors.SecurityError.UnauthorizedAccess
+                SecurityError.UnauthorizedAccess
             else if (std.mem.eql(u8, err_name, "UserNotFound"))
-                errors.SecurityError.UserNotFound
+                SecurityError.UserNotFound
             else
-                errors.SecurityError.UnauthorizedAccess;
+                SecurityError.UnauthorizedAccess;
 
             return AuthResult{
                 .authenticated = false,
@@ -228,7 +221,7 @@ pub const AuthMiddleware = struct {
                 return AuthResult{
                     .authenticated = true,
                     .user_id = api_key_info.user_id,
-                    .errors = errors.SecurityError.UnauthorizedAccess,
+                    .errors = SecurityError.UnauthorizedAccess,
                     .strategy_used = .api_key,
                 };
             }
@@ -247,7 +240,7 @@ pub const AuthMiddleware = struct {
         const auth_header = request.headers.get("Authorization") orelse {
             return AuthResult{
                 .authenticated = false,
-                .errors = errors.SecurityError.UnauthorizedAccess,
+                .errors = SecurityError.UnauthorizedAccess,
                 .strategy_used = .basic,
             };
         };
@@ -256,7 +249,7 @@ pub const AuthMiddleware = struct {
         if (!std.mem.startsWith(u8, auth_header, "Basic ")) {
             return AuthResult{
                 .authenticated = false,
-                .errors = errors.SecurityError.InvalidCredentials,
+                .errors = SecurityError.InvalidCredentials,
                 .strategy_used = .basic,
             };
         }
@@ -273,7 +266,7 @@ pub const AuthMiddleware = struct {
         const sep_idx = std.mem.indexOf(u8, decoded, ":") orelse {
             return AuthResult{
                 .authenticated = false,
-                .errors = errors.SecurityError.InvalidCredentials,
+                .errors = SecurityError.InvalidCredentials,
                 .strategy_used = .basic,
             };
         };
@@ -294,7 +287,7 @@ pub const AuthMiddleware = struct {
                 return AuthResult{
                     .authenticated = true,
                     .user_id = auth_result.user.id,
-                    .errors = errors.SecurityError.UnauthorizedAccess,
+                    .errors = SecurityError.UnauthorizedAccess,
                     .strategy_used = .basic,
                 };
             }
@@ -326,16 +319,16 @@ pub const AuthMiddleware = struct {
             const err_name = @errorName(err);
             try request.server.logger.ERROR("[auth:oauth] Session validation error: {s}", .{err_name});
 
-            const mapped_error: errors.SecurityError = if (std.mem.eql(u8, err_name, "SessionBindingMismatch"))
-                errors.SecurityError.SessionBindingMismatch
+            const mapped_error: SecurityError = if (std.mem.eql(u8, err_name, "SessionBindingMismatch"))
+                SecurityError.SessionBindingMismatch
             else if (std.mem.eql(u8, err_name, "UnauthorizedAccess"))
-                errors.SecurityError.UnauthorizedAccess
+                SecurityError.UnauthorizedAccess
             else if (std.mem.eql(u8, err_name, "SessionExpired"))
-                errors.SecurityError.SessionExpired
+                SecurityError.SessionExpired
             else if (std.mem.eql(u8, err_name, "ValidationError"))
-                errors.SecurityError.ValidationError
+                SecurityError.ValidationError
             else
-                errors.SecurityError.UnauthorizedAccess;
+                SecurityError.UnauthorizedAccess;
 
             return AuthResult{
                 .authenticated = false,
@@ -351,7 +344,7 @@ pub const AuthMiddleware = struct {
             try request.server.logger.DEBUG("[auth:oauth] Invalid user_id (0) in session", .{});
             return AuthResult{
                 .authenticated = false,
-                .errors = errors.SecurityError.UnauthorizedAccess,
+                .errors = SecurityError.UnauthorizedAccess,
                 .strategy_used = .oauth,
             };
         }
@@ -369,7 +362,7 @@ pub const AuthMiddleware = struct {
                 return AuthResult{
                     .authenticated = true,
                     .user_id = session.user_id,
-                    .errors = errors.SecurityError.UnauthorizedAccess,
+                    .errors = SecurityError.UnauthorizedAccess,
                     .strategy_used = .oauth,
                 };
             }

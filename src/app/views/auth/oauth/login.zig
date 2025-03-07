@@ -19,7 +19,7 @@ pub fn index(request: *jetzig.Request, _: *jetzig.Data) !jetzig.View {
     std.debug.print("DEBUG: Attempting to get OAuth login URL for provider: {s}\n", .{params.provider});
 
     const login_url = blk: {
-        const url = request.global.security.getOAuthLoginUrl(params.provider, request) catch |err| {
+        const url = request.global.security.oauth.getOAuthLoginUrl(params.provider, request) catch |err| {
             std.debug.print("DEBUG: Error getting OAuth URL: {}\n", .{err});
             return request.fail(.internal_server_error);
         };

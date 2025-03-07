@@ -121,7 +121,7 @@ pub const User = struct {
     is_banned: ?bool,
 };
 
-pub const Tokens = struct {
+pub const Token = struct {
     access: []const u8,
     refresh: []const u8,
     csrf: []const u8,
@@ -130,7 +130,7 @@ pub const Tokens = struct {
 pub const AuthenticationCredentials = struct {
     session: Session,
     user: User,
-    tokens: Tokens,
+    token: Token,
 };
 
 pub const Credentials = struct {

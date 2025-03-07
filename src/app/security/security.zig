@@ -28,19 +28,19 @@ const SecurityConfig = config.SecurityConfig;
 const errors = @import("errors.zig");
 const SecurityError = errors.SecurityError;
 
-const audit_log = @import("audit_log.zig");
-const AuditContext = audit_log.AuditContext;
-const AuditLog = audit_log.AuditLog;
+const audit = @import("audit.zig");
+const AuditContext = audit.AuditContext;
+const AuditLog = audit.AuditLog;
 const AuditLogConfig = config.AuditLogConfig;
-const AuthMiddleware = @import("auth_middleware.zig").AuthMiddleware;
-const SessionManager = @import("session_manager.zig").SessionManager;
-const SessionStorage = @import("session_storage.zig").SessionStorage;
-const TokenManager = @import("token_manager.zig").TokenManager;
+const AuthMiddleware = @import("middleware.zig").AuthMiddleware;
+const SessionManager = @import("session.zig").SessionManager;
+const SessionStorage = @import("storage.zig").SessionStorage;
+const TokenManager = @import("token.zig").TokenManager;
 const RateLimiter = @import("rate_limiter.zig").RateLimiter;
 const validation = @import("validation.zig");
 
-const oauth_provider = @import("oauth_provider.zig");
-const OAuthManager = oauth_provider.OAuthManager;
+const oauth = @import("oauth.zig");
+const OAuthManager = oauth.OAuthManager;
 
 // Re-export common types and configurations
 pub usingnamespace types;
@@ -51,15 +51,15 @@ pub const Security = struct {
     allocator: std.mem.Allocator,
     audit: AuditLog,
     session: SessionManager,
-    tokens: TokenManager,
+    token: TokenManager,
     rate_limiter: RateLimiter,
-    auth_middleware: AuthMiddleware,
+    middleware: AuthMiddleware,
     oauth: OAuthManager,
 
     pub fn init(allocator: std.mem.Allocator, security_config: SecurityConfig, redis_pool: *PooledRedisClient) !Security {
         return Security{
             .allocator = allocator,
-            .auth_middleware = AuthMiddleware{ .config = security_config.auth_middleware },
+            .middleware = AuthMiddleware{ .config = security_config.middleware },
             .audit = AuditLog{
                 .allocator = allocator,
                 .config = security_config.audit,
@@ -80,9 +80,9 @@ pub const Security = struct {
                     .redis_pool = redis_pool,
                 },
             },
-            .tokens = TokenManager{
+            .token = TokenManager{
                 .allocator = allocator,
-                .config = security_config.tokens,
+                .config = security_config.token,
                 .redis_pool = redis_pool,
             },
             .rate_limiter = RateLimiter{
@@ -178,7 +178,7 @@ pub const Security = struct {
     //     };
 
     //     // Create audit metadata with detailed information
-    //     const metadata = audit_log.AuditMetadata{
+    //     const metadata = audit.AuditMetadata{
     //         .action_details = error_details.details,
     //         .resource_id = context,
     //         .status = "failed",
@@ -270,10 +270,10 @@ pub const Security = struct {
         const session = try self.session.create(auth_result.user, request);
         std.log.debug("[security.authenticate] Session created", .{});
 
-        // 4. Generate tokens
-        std.log.debug("[security.authenticate] Generating tokens", .{});
-        const tokens = try self.tokens.generate(session);
-        std.log.debug("[security.authenticate] Tokens generated", .{});
+        // 4. Generate token
+        std.log.debug("[security.authenticate] Generating token", .{});
+        const token = try self.token.generate(session);
+        std.log.debug("[security.authenticate] token generated", .{});
 
         // 5. Log successful authentication
         std.log.debug("[security.authenticate] Logging successful login", .{});
@@ -290,7 +290,7 @@ pub const Security = struct {
         return AuthenticationCredentials{
             .session = session,
             .user = auth_result.user,
-            .tokens = tokens,
+            .token = token,
         };
     }
 
@@ -314,8 +314,8 @@ pub const Security = struct {
         std.log.debug("[security.validateCredentials] Building database query for email: '{s}'", .{credentials.email});
         const query = jetzig.database.Query(.User)
             .include(.user_roles, .{
-            .include = .{.role},
-        })
+                .include = .{.role},
+            })
             .findBy(.{ .email = credentials.email });
 
         // Create JSON for the custom data properly
@@ -470,7 +470,7 @@ pub const Security = struct {
     pub fn logout(self: *Security, request: *jetzig.Request, response: *jetzig.Response) !void {
         // if (self.getAuthToken(request)) |token| {
         //     try self.session.invalidate(token);
-        //     try self.tokens.invalidateToken(token);
+        //     try self.token.invalidateToken(token);
         //     try self.audit.log(.logout, null, .{
         //         .action_details = "User logout",
         //         .ip_address = try self.getIdentifier(request),
@@ -479,7 +479,7 @@ pub const Security = struct {
 
         if (self.session.getSessionTokenFromCookie(request)) |token| {
             try self.session.invalidate(token);
-            try self.tokens.invalidateToken(token);
+            try self.token.invalidateToken(token);
             try self.audit.log(.logout, null, .{
                 .action_details = "User logout",
                 .ip_address = ip_utils.getClientIp(request),
@@ -515,86 +515,5 @@ pub const Security = struct {
         _ = api_key;
         // This is a stub - implement according to your API key system
         return error.NotImplemented;
-    }
-
-    pub fn getOAuthLoginUrl(self: *Security, provider_id: []const u8, request: *jetzig.Request) ![]const u8 {
-        var provider = try self.oauth.getProvider(provider_id);
-
-        // Generate state parameter for CSRF protection
-        const state = try self.oauth.generateState();
-
-        // Store state in a cookie
-        const cookies = try request.cookies();
-        try cookies.put(.{
-            .name = self.oauth.config.state_cookie_name,
-            .value = state,
-            .path = "/",
-            .http_only = true,
-            .secure = true,
-            .same_site = .lax,
-            .max_age = self.oauth.config.state_cookie_max_age,
-        });
-
-        // Generate and return OAuth login URL
-        return try provider.getAuthorizationUrl(state);
-    }
-
-    pub fn handleOAuthCallback(self: *Security, provider_id: []const u8, code: []const u8, state: []const u8, request: *jetzig.Request) !AuthResult {
-        _ = state;
-
-        // 1. Exchange code for token
-        var provider = try self.oauth.getProvider(provider_id);
-        const token = try provider.exchangeCodeForToken(code);
-
-        // 2. Get user info from OAuth provider
-        const user_info = try provider.getUserInfo(token);
-
-        // 3. Find or create user in database
-        const user_id = try self.findOrCreateOAuthUser(provider_id, user_info);
-
-        // 4. Construct User struct for session creation
-        const client_ip = ip_utils.getClientIp(request);
-        const user_agent = request.headers.get("User-Agent") orelse "unknown";
-        const device_id = null; // Adjust if you can derive this from user_info or request
-
-        // Assuming user_info provides email and you fetch additional user data
-        // If findOrCreateOAuthUser returns a full User object, use that instead
-        const user = User{
-            .id = @intCast(user_id), // Ensure type matches your User.id (e.g., u64)
-            .email = user_info.email orelse "unknown@example.com", // Adjust based on user_info fields
-            //.roles = null, // Uncomment and populate if available from user_info or DB
-            .is_active = true, // Assume active for new OAuth users, or fetch from DB
-            .is_banned = false, // Assume not banned, or fetch from DB
-            .last_ip = client_ip,
-            .last_user_agent = user_agent,
-            .device_id = device_id,
-            .last_login_at = std.time.timestamp(),
-        };
-
-        // 5. Create session
-        const session = try self.session.create(user, request);
-        std.log.debug("[security.handleOAuthCallback] Created session with token: '{s}' for user_id: {}", .{ session.token, user_id });
-
-        // 6. Return success
-        return AuthResult{
-            .authenticated = true,
-            .user_id = user_id,
-            .strategy_used = .oauth,
-        };
-    }
-
-    // Helper method to find or create user from OAuth profile
-    fn findOrCreateOAuthUser(self: *Security, provider_id: []const u8, user_info: oauth_provider.OAuthUserInfo) !u64 {
-        // Implementation depends on your database structure
-        // Typically you would:
-        // 1. Check if a user with this provider ID and external ID exists
-        // 2. If yes, return that user's ID
-        // 3. If no, create a new user and link the OAuth account
-
-        // Placeholder implementation
-        _ = self;
-        _ = provider_id;
-        _ = user_info;
-        return 1; // Dummy user ID
     }
 };

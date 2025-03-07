@@ -45,8 +45,8 @@ pub fn authenticateRequest(self: *auth, request: *jetzig.http.Request) !bool {
     _ = self;
 
     // Check if the route requires authentication using the auth middleware config
-    const auth_middleware = request.global.security.auth_middleware;
-    const protected_route = auth_middleware.getRequiredAuthStrategy(request.path.path);
+    const middleware = request.global.security.middleware;
+    const protected_route = middleware.getRequiredAuthStrategy(request.path.path);
 
     if (protected_route == null) {
         try request.server.logger.DEBUG("[auth:auth] Route is not protected, skipping authentication", .{});
@@ -55,13 +55,13 @@ pub fn authenticateRequest(self: *auth, request: *jetzig.http.Request) !bool {
 
     // Route is protected, perform authentication
     try request.server.logger.DEBUG("[auth:auth] Authenticating protected route: {s}", .{request.path.path});
-    const auth_result = try auth_middleware.authenticate(request);
+    const auth_result = try middleware.authenticate(request);
     try request.server.logger.DEBUG("[auth:auth] Auth result: authenticated={}", .{auth_result.authenticated});
 
     // Handle authentication failure
     if (!auth_result.authenticated or auth_result.errors != null) {
         try request.server.logger.DEBUG("[auth:auth] Authentication failed, handling failure", .{});
-        try auth_middleware.handleAuthFailure(request, auth_result);
+        try middleware.handleAuthFailure(request, auth_result);
         try request.server.logger.DEBUG("[auth:auth] Auth failure handled", .{});
         return false; // Signal that response has been handled
     }

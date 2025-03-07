@@ -6,16 +6,10 @@ const types = @import("types.zig");
 const config = @import("config.zig");
 
 const Session = types.Session;
-const Tokens = types.Tokens;
+const Token = types.Token;
 const TokenConfig = config.TokenConfig;
 const PooledRedisClient = redis.PooledRedisClient;
-
-pub const TokenError = error{
-    InvalidToken,
-    ExpiredToken,
-    TokenGenerationFailed,
-    StorageError,
-};
+const SecurityError = @import("errors.zig").SecurityError;
 
 pub const TokenManager = struct {
     allocator: std.mem.Allocator,
@@ -48,8 +42,8 @@ pub const TokenManager = struct {
 
         client.setEx(key, value, self.config.access_token_ttl) catch |err| {
             return switch (err) {
-                redis.RedisError.ConnectionFailed => TokenError.StorageError,
-                redis.RedisError.CommandFailed => TokenError.StorageError,
+                redis.RedisError.ConnectionFailed => SecurityError.StorageError,
+                redis.RedisError.CommandFailed => SecurityError.StorageError,
                 else => err,
             };
         };
@@ -71,8 +65,8 @@ pub const TokenManager = struct {
 
         client.setEx(key, value, self.config.refresh_token_ttl) catch |err| {
             return switch (err) {
-                redis.RedisError.ConnectionFailed => TokenError.StorageError,
-                redis.RedisError.CommandFailed => TokenError.StorageError,
+                redis.RedisError.ConnectionFailed => SecurityError.StorageError,
+                redis.RedisError.CommandFailed => SecurityError.StorageError,
                 else => err,
             };
         };
@@ -91,14 +85,14 @@ pub const TokenManager = struct {
         defer self.allocator.free(refresh_key);
 
         try client.del(access_key) catch |err| switch (err) {
-            redis.RedisError.ConnectionFailed => return TokenError.StorageError,
-            redis.RedisError.CommandFailed => return TokenError.StorageError,
+            redis.RedisError.ConnectionFailed => return SecurityError.StorageError,
+            redis.RedisError.CommandFailed => return SecurityError.StorageError,
             else => return err,
         };
 
         try client.del(refresh_key) catch |err| switch (err) {
-            redis.RedisError.ConnectionFailed => return TokenError.StorageError,
-            redis.RedisError.CommandFailed => return TokenError.StorageError,
+            redis.RedisError.ConnectionFailed => return SecurityError.StorageError,
+            redis.RedisError.CommandFailed => return SecurityError.StorageError,
             else => return err,
         };
     }
@@ -115,25 +109,25 @@ pub const TokenManager = struct {
         return encoded;
     }
 
-    pub fn generate(self: *TokenManager, session: Session) !Tokens {
-        return Tokens{
+    pub fn generate(self: *TokenManager, session: Session) !Token {
+        return Token{
             .access = try self.allocator.dupe(u8, try self.createAccessToken(session)),
             .refresh = try self.allocator.dupe(u8, try self.createRefreshToken(session)),
             .csrf = try self.allocator.dupe(u8, try self.createCSRFToken()),
         };
     }
 
-    pub fn rotate(self: *TokenManager, refresh_token: []const u8) !Tokens {
+    pub fn rotate(self: *TokenManager, refresh_token: []const u8) !Token {
         // Validate refresh token
         const session = try self.validateRefreshToken(refresh_token);
 
         // Generate new token pair
-        const new_tokens = try self.generate(session);
+        const new_token = try self.generate(session);
 
         // Invalidate old refresh token
         try self.invalidateToken(refresh_token);
 
-        return new_tokens;
+        return new_token;
     }
 
     fn validateRefreshToken(self: *TokenManager, token: []const u8) !Session {
@@ -144,10 +138,10 @@ pub const TokenManager = struct {
         defer self.allocator.free(key);
 
         const value = try client.get(key) catch |err| switch (err) {
-            redis.RedisError.ConnectionFailed => return TokenError.StorageError,
-            redis.RedisError.CommandFailed => return TokenError.StorageError,
+            redis.RedisError.ConnectionFailed => return SecurityError.StorageError,
+            redis.RedisError.CommandFailed => return SecurityError.StorageError,
             else => return err,
-        } orelse return TokenError.InvalidToken;
+        } orelse return SecurityError.InvalidToken;
 
         return try std.json.parse(Session, value, .{});
     }
@@ -160,10 +154,10 @@ pub const TokenManager = struct {
         defer self.allocator.free(key);
 
         const value = (client.get(key) catch |err| switch (err) {
-            redis.RedisError.ConnectionFailed => return TokenError.StorageError,
-            redis.RedisError.CommandFailed => return TokenError.StorageError,
+            redis.RedisError.ConnectionFailed => return SecurityError.InternalError,
+            redis.RedisError.CommandFailed => return SecurityError.InternalError,
             else => return err,
-        }) orelse return TokenError.InvalidToken;
+        }) orelse return SecurityError.InvalidToken;
 
         var parsed = try std.json.parseFromSlice(Session, self.allocator, value, .{});
         defer parsed.deinit();

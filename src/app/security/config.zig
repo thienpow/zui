@@ -1,4 +1,4 @@
-const SessionStorage = @import("session_storage.zig");
+const SessionStorage = @import("storage.zig");
 const types = @import("types.zig");
 const redis = @import("../database/redis/redis.zig");
 
@@ -8,10 +8,10 @@ const StorageType = types.StorageType;
 const ProtectedRoute = types.ProtectedRoute;
 
 pub const SecurityConfig = struct {
-    auth_middleware: AuthMiddlewareConfig,
+    middleware: AuthMiddlewareConfig,
     session: SessionConfig,
     storage: StorageConfig,
-    tokens: TokenConfig,
+    token: TokenConfig,
     rate_limit: RateLimitConfig,
     audit: AuditLogConfig,
     oauth: OAuthConfig,
@@ -19,7 +19,7 @@ pub const SecurityConfig = struct {
     pub fn validate(self: SecurityConfig) !void {
         if (self.session.session_ttl <= 0) return error.InvalidSessionTTL;
         if (self.session.max_sessions_per_user == 0) return error.InvalidSessionLimit;
-        if (self.tokens.token_length < 32) return error.InsecureTokenLength;
+        if (self.token.token_length < 32) return error.InsecureTokenLength;
         if (self.rate_limit.window_seconds == 0) return error.InvalidRateLimit;
         if (self.rate_limit.lockout_duration < self.rate_limit.window_seconds)
             return error.InvalidLockoutDuration;
@@ -27,8 +27,9 @@ pub const SecurityConfig = struct {
 };
 
 pub const SessionConfig = struct {
-    max_sessions_per_user: u32 = 5,
+    cookie_name: []const u8 = "session_token",
     session_ttl: i64 = 24 * 60 * 60, // 24 hours in seconds
+    max_sessions_per_user: u32 = 5,
     refresh_threshold: i64 = 60 * 60, // 1 hour in seconds
     cleanup_interval: i64 = 60 * 60, // 1 hour in seconds
 };
@@ -94,9 +95,9 @@ pub const OAuthProviderConfig = struct {
 
 pub const OAuthConfig = struct {
     enabled: bool = false,
+    state_cookie_name: []const u8 = "session_token",
+    state_cookie_max_age: i64 = 600,
     providers: []const OAuthProviderConfig = &.{},
-    state_cookie_name: []const u8 = "oauth_state",
-    state_cookie_max_age: i32 = 600, // 10 minutes
     default_redirect: []const u8 = "/dashboard",
     user_auto_create: bool = true,
     user_auto_login: bool = true,

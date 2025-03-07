@@ -23,7 +23,7 @@ pub const ConfigManager = struct {
         };
 
         const security_config = security.SecurityConfig{
-            .auth_middleware = .{
+            .middleware = .{
                 .protected_routes = &[_]types.ProtectedRoute{
                     .{
                         .prefix = "/admin/",
@@ -47,6 +47,7 @@ pub const ConfigManager = struct {
             },
             .session = .{
                 .max_sessions_per_user = 5,
+                .cookie_name = "session_token",
                 .session_ttl = 24 * 60 * 60, // 24 hours in seconds
                 .refresh_threshold = 60 * 60, // 1 hour in seconds
                 .cleanup_interval = 60 * 60, // 1 hour in seconds
@@ -55,7 +56,7 @@ pub const ConfigManager = struct {
                 .storage_type = .both,
                 .cleanup_batch_size = 1000,
             },
-            .tokens = .{
+            .token = .{
                 .access_token_ttl = 15 * 60, // 15 minutes
                 .refresh_token_ttl = 7 * 24 * 60 * 60, // 7 days
                 .token_length = 48,
@@ -78,6 +79,8 @@ pub const ConfigManager = struct {
             },
             .oauth = .{
                 .enabled = false,
+                .state_cookie_name = "session_token",
+                .state_cookie_max_age = 600,
                 .providers = &[_]security.OAuthProviderConfig{
                     .{
                         .provider = .google,
@@ -92,8 +95,6 @@ pub const ConfigManager = struct {
                         .enabled = false,
                     },
                 },
-                .state_cookie_name = "oauth_state",
-                .state_cookie_max_age = 600, // 10 minutes
                 .default_redirect = "/dashboard",
                 .user_auto_create = true,
                 .user_auto_login = true,
@@ -191,7 +192,7 @@ pub const ConfigManager = struct {
         std.log.scoped(.config).debug("[config.deinit] Cleaning up configuration manager resources", .{});
         // Free the allocated config_file_path
         self.allocator.free(self.config_file_path);
-        for (self.security_config.auth_middleware.protected_routes) |protected_route| {
+        for (self.security_config.middleware.protected_routes) |protected_route| {
             self.allocator.free(protected_route.prefix);
             if (protected_route.required_roles) |roles| {
                 for (roles) |role| {
@@ -202,9 +203,9 @@ pub const ConfigManager = struct {
             self.allocator.free(protected_route.strategies);
         }
 
-        self.allocator.free(self.security_config.auth_middleware.protected_routes);
-        self.allocator.free(self.security_config.auth_middleware.login_redirect_url);
-        self.allocator.free(self.security_config.auth_middleware.api_error_message);
+        self.allocator.free(self.security_config.middleware.protected_routes);
+        self.allocator.free(self.security_config.middleware.login_redirect_url);
+        self.allocator.free(self.security_config.middleware.api_error_message);
 
         for (self.security_config.oauth.providers) |provider| {
             self.allocator.free(provider.name);
@@ -225,6 +226,7 @@ pub const ConfigManager = struct {
             self.allocator.free(self.security_config.oauth.providers);
         }
 
+        self.allocator.free(self.security_config.session.cookie_name);
         self.allocator.free(self.security_config.oauth.state_cookie_name);
         self.allocator.free(self.security_config.oauth.default_redirect);
 
@@ -329,9 +331,9 @@ pub const ConfigManager = struct {
         // Get the security config
         std.log.scoped(.config).debug("[config.load] Processing security configuration", .{});
         if (parsed_json.value.object.get("security")) |security_json| {
-            // Parse auth_middleware
+            // Parse middleware
             std.log.scoped(.config).debug("[config.load] Processing auth middleware configuration", .{});
-            if (security_json.object.get("auth_middleware")) |middleware_json| {
+            if (security_json.object.get("middleware")) |middleware_json| {
                 var routes = std.ArrayList(types.ProtectedRoute).init(self.allocator);
                 defer routes.deinit();
 
@@ -377,32 +379,40 @@ pub const ConfigManager = struct {
                     }
                 }
 
-                self.security_config.auth_middleware.protected_routes = try routes.toOwnedSlice();
-                std.log.scoped(.config).debug("[config.load] Processed {d} protected routes total", .{self.security_config.auth_middleware.protected_routes.len});
+                self.security_config.middleware.protected_routes = try routes.toOwnedSlice();
+                std.log.scoped(.config).debug("[config.load] Processed {d} protected routes total", .{self.security_config.middleware.protected_routes.len});
 
                 if (middleware_json.object.get("login_redirect_url")) |url_json| {
-                    self.security_config.auth_middleware.login_redirect_url =
+                    self.security_config.middleware.login_redirect_url =
                         try self.allocator.dupe(u8, url_json.string);
-                    std.log.scoped(.config).debug("[config.load] Set login redirect URL: {s}", .{self.security_config.auth_middleware.login_redirect_url});
+                    std.log.scoped(.config).debug("[config.load] Set login redirect URL: {s}", .{self.security_config.middleware.login_redirect_url});
                 }
 
                 if (middleware_json.object.get("use_return_to")) |use_return_json| {
-                    self.security_config.auth_middleware.use_return_to = use_return_json.bool;
-                    std.log.scoped(.config).debug("[config.load] Set use_return_to: {}", .{self.security_config.auth_middleware.use_return_to});
+                    self.security_config.middleware.use_return_to = use_return_json.bool;
+                    std.log.scoped(.config).debug("[config.load] Set use_return_to: {}", .{self.security_config.middleware.use_return_to});
                 }
 
                 if (middleware_json.object.get("api_error_message")) |msg_json| {
-                    self.security_config.auth_middleware.api_error_message =
+                    self.security_config.middleware.api_error_message =
                         try self.allocator.dupe(u8, msg_json.string);
-                    std.log.scoped(.config).debug("[config.load] Set API error message: {s}", .{self.security_config.auth_middleware.api_error_message});
+                    std.log.scoped(.config).debug("[config.load] Set API error message: {s}", .{self.security_config.middleware.api_error_message});
                 }
             }
 
             std.log.scoped(.config).debug("[config.load] Processing session configuration", .{});
             if (security_json.object.get("session")) |session_json| {
+
+                // Parse state cookie info
                 if (session_json.object.get("max_sessions_per_user")) |max_sessions_json| {
                     self.security_config.session.max_sessions_per_user = @intCast(max_sessions_json.integer);
                     std.log.scoped(.config).debug("[config.load] Set max sessions per user: {d}", .{self.security_config.session.max_sessions_per_user});
+                }
+
+                if (security_json.object.get("cookie_name")) |cookie_name_json| {
+                    self.security_config.session.cookie_name =
+                        try self.allocator.dupe(u8, cookie_name_json.string);
+                    std.log.scoped(.config).debug("[config.load] Set session cookie name: {s}", .{self.security_config.session.cookie_name});
                 }
 
                 if (session_json.object.get("session_ttl")) |session_ttl_json| {
@@ -445,21 +455,21 @@ pub const ConfigManager = struct {
             }
 
             // Parse tokens config
-            std.log.scoped(.config).debug("[config.load] Processing tokens configuration", .{});
-            if (security_json.object.get("tokens")) |tokens_json| {
-                if (tokens_json.object.get("access_token_ttl")) |access_token_ttl_json| {
-                    self.security_config.tokens.access_token_ttl = @intCast(access_token_ttl_json.integer);
-                    std.log.scoped(.config).debug("[config.load] Set access token TTL: {d} seconds", .{self.security_config.tokens.access_token_ttl});
+            std.log.scoped(.config).debug("[config.load] Processing token configuration", .{});
+            if (security_json.object.get("token")) |token_json| {
+                if (token_json.object.get("access_token_ttl")) |access_token_ttl_json| {
+                    self.security_config.token.access_token_ttl = @intCast(access_token_ttl_json.integer);
+                    std.log.scoped(.config).debug("[config.load] Set access token TTL: {d} seconds", .{self.security_config.token.access_token_ttl});
                 }
 
-                if (tokens_json.object.get("refresh_token_ttl")) |refresh_token_ttl_json| {
-                    self.security_config.tokens.refresh_token_ttl = @intCast(refresh_token_ttl_json.integer);
-                    std.log.scoped(.config).debug("[config.load] Set refresh token TTL: {d} seconds", .{self.security_config.tokens.refresh_token_ttl});
+                if (token_json.object.get("refresh_token_ttl")) |refresh_token_ttl_json| {
+                    self.security_config.token.refresh_token_ttl = @intCast(refresh_token_ttl_json.integer);
+                    std.log.scoped(.config).debug("[config.load] Set refresh token TTL: {d} seconds", .{self.security_config.token.refresh_token_ttl});
                 }
 
-                if (tokens_json.object.get("token_length")) |token_length_json| {
-                    self.security_config.tokens.token_length = @intCast(token_length_json.integer);
-                    std.log.scoped(.config).debug("[config.load] Set token length: {d}", .{self.security_config.tokens.token_length});
+                if (token_json.object.get("token_length")) |token_length_json| {
+                    self.security_config.token.token_length = @intCast(token_length_json.integer);
+                    std.log.scoped(.config).debug("[config.load] Set token length: {d}", .{self.security_config.token.token_length});
                 }
             }
 
@@ -550,16 +560,15 @@ pub const ConfigManager = struct {
                     std.log.scoped(.config).debug("[config.load] Set OAuth enabled: {}", .{self.security_config.oauth.enabled});
                 }
 
-                // Parse state cookie info
-                if (oauth_json.object.get("state_cookie_name")) |cookie_name_json| {
+                if (oauth_json.object.get("state_cookie_name")) |state_cookie_name_json| {
                     self.security_config.oauth.state_cookie_name =
-                        try self.allocator.dupe(u8, cookie_name_json.string);
-                    std.log.scoped(.config).debug("[config.load] Set OAuth state cookie name: {s}", .{self.security_config.oauth.state_cookie_name});
+                        try self.allocator.dupe(u8, state_cookie_name_json.string);
+                    std.log.scoped(.config).debug("[config.load] Set OAuth state_cookie_name: {s}", .{self.security_config.oauth.state_cookie_name});
                 }
 
-                if (oauth_json.object.get("state_cookie_max_age")) |max_age_json| {
-                    self.security_config.oauth.state_cookie_max_age = @intCast(max_age_json.integer);
-                    std.log.scoped(.config).debug("[config.load] Set OAuth state cookie max age: {d} seconds", .{self.security_config.oauth.state_cookie_max_age});
+                if (oauth_json.object.get("state_cookie_max_age")) |state_cookie_max_age_json| {
+                    self.security_config.oauth.state_cookie_max_age = @intCast(state_cookie_max_age_json.integer);
+                    std.log.scoped(.config).debug("[config.load] Set OAuth state_cookie_max_age: {d} seconds", .{self.security_config.oauth.state_cookie_max_age});
                 }
 
                 // Parse default redirect

@@ -28,7 +28,7 @@ pub fn get(id: []const u8, request: *jetzig.Request, data: *jetzig.Data) !jetzig
     }
 
     // Process OAuth callback with string parameters
-    const auth_result = try request.global.security.handleOAuthCallback(provider_id, code, state, request);
+    const auth_result = try request.global.security.oauth.handleOAuthCallback(provider_id, code, state, request);
     if (!auth_result.authenticated) {
         return request.fail(.unauthorized);
     }

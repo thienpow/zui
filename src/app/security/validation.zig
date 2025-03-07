@@ -2,7 +2,7 @@ const std = @import("std");
 const jetzig = @import("jetzig");
 const ip_utils = @import("../utils/ip.zig");
 const types = @import("types.zig");
-const AuditMetadata = @import("audit_log.zig").AuditMetadata;
+const AuditMetadata = @import("audit.zig").AuditMetadata;
 
 const Session = types.Session;
 

@@ -94,7 +94,7 @@ pub fn main() !void {
     defer config_manager.deinit();
     // std.log.debug("config_file_path = '{s}'", .{config_manager.config_file_path});
     // std.log.debug("Redis config: host='{s}', port={d}, max_connections={d}", .{ config_manager.redis_config.host, config_manager.redis_config.port, config_manager.redis_config.max_connections });
-    // std.log.debug("Security config: storage.storage_type={}, tokens.access_token_ttl={d}", .{ config_manager.security_config.storage.storage_type, config_manager.security_config.tokens.access_token_ttl });
+    // std.log.debug("Security config: storage.storage_type={}, token.access_token_ttl={d}", .{ config_manager.security_config.storage.storage_type, config_manager.security_config.tokens.access_token_ttl });
 
     // --- Use the loaded configurations ---
     const redis_pool_ptr = try allocator.create(PooledRedisClient);
