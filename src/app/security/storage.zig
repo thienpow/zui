@@ -15,7 +15,7 @@ pub const SessionStorage = struct {
     redis_pool: *PooledRedisClient,
 
     pub fn getSessionByToken(self: *SessionStorage, token: []const u8) !?Session {
-        std.log.info("[storage.getSessionByToken] token={s}", .{token});
+        std.log.scoped(.auth).debug("[storage.getSessionByToken] token={s}", .{token});
         var client = try self.redis_pool.acquire();
         defer self.redis_pool.release(client);
 
@@ -24,11 +24,11 @@ pub const SessionStorage = struct {
 
         // Handle the optional result from get()
         const data = (try client.get(key)) orelse {
-            std.log.info("[storage.getSessionByToken] Key not found: {s}", .{key});
+            std.log.scoped(.auth).debug("[storage.getSessionByToken] Key not found: {s}", .{key});
             return null;
         };
 
-        std.log.info("[storage.getSessionByToken] Raw data retrieved: {s}", .{data});
+        std.log.scoped(.auth).debug("[storage.getSessionByToken] Raw data retrieved: {s}", .{data});
         // DON'T defer free the data yet - we need it until we're done with the session
 
         // Use allocate option to ensure strings are properly owned
@@ -44,19 +44,19 @@ pub const SessionStorage = struct {
             options,
         ) catch |err| {
             self.allocator.free(data); // Free data before returning
-            std.log.err("Failed to parse session data: {}", .{err});
+            std.log.scoped(.auth).debug("Failed to parse session data: {}", .{err});
             return null;
         };
 
         // Now we can free the original data
         self.allocator.free(data);
 
-        std.log.info("[storage.getSessionByToken] Parsed session ID: {s}", .{session.id});
+        std.log.scoped(.auth).debug("[storage.getSessionByToken] Parsed session ID: {s}", .{session.id});
         return session;
     }
 
     pub fn getSessionById(self: *SessionStorage, session_id: []const u8) !?Session {
-        std.log.info("[storage.getSessionById] session_id={s}", .{session_id});
+        std.log.scoped(.auth).debug("[storage.getSessionById] session_id={s}", .{session_id});
         var client = try self.redis_pool.acquire();
         defer self.redis_pool.release(client);
 
@@ -65,7 +65,7 @@ pub const SessionStorage = struct {
 
         // Handle the optional result from get()
         const data = (try client.get(key)) orelse {
-            std.log.info("[storage.getSessionById] Key not found: {s}", .{key});
+            std.log.scoped(.auth).debug("[storage.getSessionById] Key not found: {s}", .{key});
             return null;
         };
 
@@ -77,8 +77,8 @@ pub const SessionStorage = struct {
             data,
             .{},
         ) catch |err| {
-            std.log.err("Failed to parse session data: {}", .{err});
-            std.log.err("Raw session data: {s}", .{data});
+            std.log.scoped(.auth).debug("Failed to parse session data: {}", .{err});
+            std.log.scoped(.auth).debug("Raw session data: {s}", .{data});
             return null;
         };
         defer parsed.deinit();
@@ -92,7 +92,7 @@ pub const SessionStorage = struct {
 
         // First get the session to find its token
         const session = (try self.getSessionById(session_id)) orelse {
-            std.log.info("[storage.invalidateSession] Session not found: {s}", .{session_id});
+            std.log.scoped(.auth).debug("[storage.invalidateSession] Session not found: {s}", .{session_id});
             return;
         };
 
@@ -114,8 +114,8 @@ pub const SessionStorage = struct {
 
     pub fn saveSession(self: *SessionStorage, session: Session) !void {
         // Log the complete session before saving
-        std.log.debug("[storage.saveSession] Saving session: id='{s}' (len: {})", .{ session.id, session.id.len });
-        std.log.debug("[storage.saveSession] User ID: {d}, token='{s}' (len: {})", .{ session.user_id, session.token, session.token.len });
+        std.log.scoped(.auth).debug("[storage.saveSession] Saving session: id='{s}' (len: {})", .{ session.id, session.id.len });
+        std.log.scoped(.auth).debug("[storage.saveSession] User ID: {d}, token='{s}' (len: {})", .{ session.user_id, session.token, session.token.len });
 
         // Specifically log metadata with details on if it's null or not
         const ip_str = if (session.metadata.ip_address) |ip|
@@ -132,7 +132,7 @@ pub const SessionStorage = struct {
         defer if (!std.mem.eql(u8, ua_str, "null") and !std.mem.eql(u8, ua_str, "allocation error"))
             self.allocator.free(ua_str);
 
-        std.log.debug("[storage.saveSession] Metadata: ip_address={s}, user_agent={s}", .{ ip_str, ua_str });
+        std.log.scoped(.auth).debug("[storage.saveSession] Metadata: ip_address={s}, user_agent={s}", .{ ip_str, ua_str });
 
         var client = try self.redis_pool.acquire();
         defer self.redis_pool.release(client);
@@ -146,7 +146,7 @@ pub const SessionStorage = struct {
 
         // Get the resulting JSON string and log it
         const value = json_buffer.items;
-        std.log.debug("[storage.saveSession] JSON serialized: {s}", .{value});
+        std.log.scoped(.auth).debug("[storage.saveSession] JSON serialized: {s}", .{value});
 
         // Store session by ID
         const id_key = try std.fmt.allocPrint(self.allocator, "session:{s}", .{session.id});

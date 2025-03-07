@@ -28,7 +28,7 @@ pub const RedisClient = struct {
 
         // Try ping to verify connection
         const ping_response = self.ping() catch |err| {
-            std.log.err("Health check failed: {}", .{err});
+            std.log.scoped(.redis_client).debug("Health check failed: {}", .{err});
             return false;
         };
         defer self.allocator.free(ping_response);
@@ -67,7 +67,7 @@ pub const RedisClient = struct {
 
         // Initial ping to verify connection
         const ping_response = client.ping() catch |err| {
-            std.log.err("Initial ping failed: {}", .{err});
+            std.log.scoped(.redis_client).debug("Initial ping failed: {}", .{err});
             client.disconnect();
             return RedisError.ConnectionFailed;
         };
@@ -85,20 +85,20 @@ pub const RedisClient = struct {
             std.log.scoped(.redis_client).debug("Reconnection attempt {d}/{d}", .{ self.reconnect_attempts + 1, self.max_reconnect_attempts });
             self.socket = std.net.tcpConnectToHost(self.allocator, self.config.host, self.config.port) catch |err| switch (err) {
                 error.ConnectionRefused => {
-                    std.log.err("Reconnection attempt {d}/{d} failed: ConnectionRefused", .{ self.reconnect_attempts + 1, self.max_reconnect_attempts });
+                    std.log.scoped(.redis_client).debug("Reconnection attempt {d}/{d} failed: ConnectionRefused", .{ self.reconnect_attempts + 1, self.max_reconnect_attempts });
                     if (self.reconnect_attempts + 1 == self.max_reconnect_attempts) return RedisError.ConnectionRefused;
                     std.time.sleep(std.time.ns_per_s);
                     continue;
                 },
                 error.NetworkUnreachable => {
-                    std.log.err("Reconnection attempt {d}/{d} failed: {}", .{ self.reconnect_attempts + 1, self.max_reconnect_attempts, err });
+                    std.log.scoped(.redis_client).debug("Reconnection attempt {d}/{d} failed: {}", .{ self.reconnect_attempts + 1, self.max_reconnect_attempts, err });
                     if (self.reconnect_attempts + 1 == self.max_reconnect_attempts) return RedisError.NetworkError;
                     std.time.sleep(std.time.ns_per_s);
                     continue;
                 },
                 error.OutOfMemory => return RedisError.OutOfMemory,
                 else => {
-                    std.log.err("Reconnection attempt {d}/{d} failed: {}", .{ self.reconnect_attempts + 1, self.max_reconnect_attempts, err });
+                    std.log.scoped(.redis_client).debug("Reconnection attempt {d}/{d} failed: {}", .{ self.reconnect_attempts + 1, self.max_reconnect_attempts, err });
                     if (self.reconnect_attempts + 1 == self.max_reconnect_attempts) return RedisError.ReconnectFailed;
                     std.time.sleep(std.time.ns_per_s);
                     continue;
@@ -112,7 +112,7 @@ pub const RedisClient = struct {
             return;
         }
 
-        std.log.err("All reconnection attempts failed after {d} tries", .{self.max_reconnect_attempts});
+        std.log.scoped(.redis_client).debug("All reconnection attempts failed after {d} tries", .{self.max_reconnect_attempts});
         return RedisError.ReconnectFailed;
     }
 
@@ -190,7 +190,7 @@ pub const RedisClient = struct {
                     => {
                         std.log.scoped(.redis_client).debug("[redis_client.executeCommand] Connection error detected, attempting reconnect", .{});
                         self.reconnect() catch |reconnect_err| {
-                            std.log.err("[redis_client.executeCommand] Reconnect failed: {}", .{reconnect_err});
+                            std.log.scoped(.redis_client).debug("[redis_client.executeCommand] Reconnect failed: {}", .{reconnect_err});
                             return reconnect_err;
                         };
                         std.log.scoped(.redis_client).debug("[redis_client.executeCommand] Reconnect successful, retrying", .{});

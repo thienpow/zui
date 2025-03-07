@@ -13,8 +13,8 @@ pub fn log(
             //  To implement, replace existing std.log.debug in each module
             //  to example: std.log.scoped(.config_manager).debug
             //scope == .redis_pool or
-            //scope == .config_manager or
-            //scope == .security or
+            scope == .config or
+            scope == .auth or
             scope == .other)
         {
             return;

@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.14.0-dev.3470+711b0fef5",
     .dependencies = .{
         .jetzig = .{
-            .url = "https://github.com/jetzig-framework/jetzig/archive/d3157e4247211091127daba88a2552af3be8f5ed.tar.gz",
-            .hash = "jetzig-0.0.0-IpAgLe0QDwC-6XH_ElHKUmPGxGxr1XdgiLeHEalerM7B",
+            .path = "../jetzig-framework/jetzig/",
+            //.hash = "jetzig-0.0.0-IpAgLe0QDwC-6XH_ElHKUmPGxGxr1XdgiLeHEalerM7B",
         },
     },
     .paths = .{

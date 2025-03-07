@@ -98,7 +98,7 @@ pub const OAuthProvider = struct {
             else
                 "Unknown OAuth error";
 
-            std.log.err("OAuth token error: {s}", .{error_msg});
+            std.log.scoped(.auth).debug("OAuth token error: {s}", .{error_msg});
             return OAuthError.TokenRequestFailed;
         }
 
@@ -287,7 +287,7 @@ pub const OAuthProvider = struct {
             try request.wait();
 
             if (@intFromEnum(request.response.status) < 200 or @intFromEnum(request.response.status) >= 300) {
-                std.log.err("HTTP error: status {d}", .{@intFromEnum(request.response.status)});
+                std.log.scoped(.auth).debug("HTTP error: status {d}", .{@intFromEnum(request.response.status)});
                 return OAuthError.HttpError;
             }
 
@@ -313,7 +313,7 @@ pub const OAuthProvider = struct {
             try request.wait();
 
             if (@intFromEnum(request.response.status) < 200 or @intFromEnum(request.response.status) >= 300) {
-                std.log.err("HTTP error: status {d}", .{@intFromEnum(request.response.status)});
+                std.log.scoped(.auth).debug("HTTP error: status {d}", .{@intFromEnum(request.response.status)});
                 return OAuthError.HttpError;
             }
 
@@ -339,7 +339,7 @@ pub const OAuthProvider = struct {
             try request.wait();
 
             if (@intFromEnum(request.response.status) < 200 or @intFromEnum(request.response.status) >= 300) {
-                std.log.err("HTTP error: status {d}", .{@intFromEnum(request.response.status)});
+                std.log.scoped(.auth).debug("HTTP error: status {d}", .{@intFromEnum(request.response.status)});
                 return OAuthError.HttpError;
             }
 
@@ -365,7 +365,7 @@ pub const OAuthProvider = struct {
             try request.wait();
 
             if (@intFromEnum(request.response.status) < 200 or @intFromEnum(request.response.status) >= 300) {
-                std.log.err("HTTP error: status {d}", .{@intFromEnum(request.response.status)});
+                std.log.scoped(.auth).debug("HTTP error: status {d}", .{@intFromEnum(request.response.status)});
                 return OAuthError.HttpError;
             }
 
@@ -391,7 +391,7 @@ pub const OAuthProvider = struct {
             try request.wait();
 
             if (@intFromEnum(request.response.status) < 200 or @intFromEnum(request.response.status) >= 300) {
-                std.log.err("HTTP error: status {d}", .{@intFromEnum(request.response.status)});
+                std.log.scoped(.auth).debug("HTTP error: status {d}", .{@intFromEnum(request.response.status)});
                 return OAuthError.HttpError;
             }
 
@@ -408,7 +408,7 @@ pub const OAuthProvider = struct {
             try request.wait();
 
             if (@intFromEnum(request.response.status) < 200 or @intFromEnum(request.response.status) >= 300) {
-                std.log.err("HTTP error: status {d}", .{@intFromEnum(request.response.status)});
+                std.log.scoped(.auth).debug("HTTP error: status {d}", .{@intFromEnum(request.response.status)});
                 return OAuthError.HttpError;
             }
 
@@ -495,7 +495,7 @@ pub const OAuthManager = struct {
         };
 
         const session = try request.global.security.session.create(user, request);
-        std.log.debug("[oauth.handleOAuthCallback] Created session with token: '{s}' for user_id: {}", .{ session.token, user_id });
+        std.log.scoped(.auth).debug("[oauth.handleOAuthCallback] Created session with token: '{s}' for user_id: {}", .{ session.token, user_id });
 
         return AuthResult{
             .authenticated = true,

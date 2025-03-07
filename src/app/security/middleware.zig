@@ -84,7 +84,7 @@ pub const AuthMiddleware = struct {
         const session = request.global.security.validateSession(request) catch |err| {
             // Convert the error to a string for debugging
             const err_name = @errorName(err);
-            std.log.err("Session validation error: {s}", .{err_name});
+            std.log.scoped(.auth).debug("Session validation error: {s}", .{err_name});
 
             // Map common errors we expect
             const mapped_error: SecurityError = if (std.mem.eql(u8, err_name, "SessionBindingMismatch"))
@@ -193,7 +193,7 @@ pub const AuthMiddleware = struct {
         const api_key_info = request.global.security.validateApiKey(api_key) catch |err| {
             // Convert the error to a string for debugging
             const err_name = @errorName(err);
-            std.log.err("API key validation error: {s}", .{err_name});
+            std.log.scoped(.auth).debug("API key validation error: {s}", .{err_name});
 
             // Map common errors based on error name
             const mapped_error: SecurityError = if (std.mem.eql(u8, err_name, "InvalidInput"))
@@ -301,19 +301,19 @@ pub const AuthMiddleware = struct {
     }
 
     fn authenticateWithOAuth(_: *const AuthMiddleware, request: *jetzig.Request, route: ProtectedRoute) !AuthResult {
-        try request.server.logger.DEBUG("[auth:oauth] Starting OAuth authentication for route: {s}", .{request.path.path});
+        std.log.scoped(.auth).debug("[auth:oauth] Starting OAuth authentication for route: {s}", .{request.path.path});
 
         // Debug required roles if present
         if (route.required_roles) |required_roles| {
             for (required_roles) |role| {
-                try request.server.logger.DEBUG("[auth:oauth] Required role: {s}", .{role});
+                std.log.scoped(.auth).debug("[auth:oauth] Required role: {s}", .{role});
             }
         } else {
-            try request.server.logger.DEBUG("[auth:oauth] No roles required for this route", .{});
+            std.log.scoped(.auth).debug("[auth:oauth] No roles required for this route", .{});
         }
 
         // Get the session - OAuth works with sessions
-        try request.server.logger.DEBUG("[auth:oauth] Attempting to validate session", .{});
+        std.log.scoped(.auth).debug("[auth:oauth] Attempting to validate session", .{});
         const session = request.global.security.validateSession(request) catch |err| {
             // Same error handling logic as in authenticateWithSession
             const err_name = @errorName(err);
@@ -337,11 +337,11 @@ pub const AuthMiddleware = struct {
             };
         };
 
-        try request.server.logger.DEBUG("[auth:oauth] Session validation successful, user_id: {d}", .{session.user_id});
+        std.log.scoped(.auth).debug("[auth:oauth] Session validation successful, user_id: {d}", .{session.user_id});
 
         // Check if user is authenticated via OAuth
         if (session.user_id == 0) {
-            try request.server.logger.DEBUG("[auth:oauth] Invalid user_id (0) in session", .{});
+            std.log.scoped(.auth).debug("[auth:oauth] Invalid user_id (0) in session", .{});
             return AuthResult{
                 .authenticated = false,
                 .errors = SecurityError.UnauthorizedAccess,
@@ -351,14 +351,14 @@ pub const AuthMiddleware = struct {
 
         // Check required roles if specified
         if (route.required_roles) |required_roles| {
-            try request.server.logger.DEBUG("[auth:oauth] Checking for required roles", .{});
+            std.log.scoped(.auth).debug("[auth:oauth] Checking for required roles", .{});
 
             // Use hasRequiredRoles directly
             const has_required_role = try request.global.security.hasRequiredRoles(session.user_id, required_roles);
-            try request.server.logger.DEBUG("[auth:oauth] Has required roles: {}", .{has_required_role});
+            std.log.scoped(.auth).debug("[auth:oauth] Has required roles: {}", .{has_required_role});
 
             if (!has_required_role) {
-                try request.server.logger.DEBUG("[auth:oauth] User lacks required roles", .{});
+                std.log.scoped(.auth).debug("[auth:oauth] User lacks required roles", .{});
                 return AuthResult{
                     .authenticated = true,
                     .user_id = session.user_id,
@@ -367,10 +367,10 @@ pub const AuthMiddleware = struct {
                 };
             }
         } else {
-            try request.server.logger.DEBUG("[auth:oauth] No role requirements for this route", .{});
+            std.log.scoped(.auth).debug("[auth:oauth] No role requirements for this route", .{});
         }
 
-        try request.server.logger.DEBUG("[auth:oauth] Authentication successful", .{});
+        std.log.scoped(.auth).debug("[auth:oauth] Authentication successful", .{});
         return AuthResult{
             .authenticated = true,
             .user_id = session.user_id,

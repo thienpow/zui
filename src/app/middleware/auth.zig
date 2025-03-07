@@ -49,31 +49,31 @@ pub fn authenticateRequest(self: *auth, request: *jetzig.http.Request) !bool {
     const protected_route = middleware.getRequiredAuthStrategy(request.path.path);
 
     if (protected_route == null) {
-        try request.server.logger.DEBUG("[auth:auth] Route is not protected, skipping authentication", .{});
+        std.log.scoped(.auth).debug("[auth.authenticateRequest] Route is not protected, skipping authentication", .{});
         return true; // Continue processing without authentication
     }
 
     // Route is protected, perform authentication
-    try request.server.logger.DEBUG("[auth:auth] Authenticating protected route: {s}", .{request.path.path});
+    std.log.scoped(.auth).debug("[auth.authenticateRequest] Authenticating protected route: {s}", .{request.path.path});
     const auth_result = try middleware.authenticate(request);
-    try request.server.logger.DEBUG("[auth:auth] Auth result: authenticated={}", .{auth_result.authenticated});
+    std.log.scoped(.auth).debug("[auth.authenticateRequest] Auth result: authenticated={}", .{auth_result.authenticated});
 
     // Handle authentication failure
     if (!auth_result.authenticated or auth_result.errors != null) {
-        try request.server.logger.DEBUG("[auth:auth] Authentication failed, handling failure", .{});
+        std.log.scoped(.auth).debug("[auth.authenticateRequest] Authentication failed, handling failure", .{});
         try middleware.handleAuthFailure(request, auth_result);
-        try request.server.logger.DEBUG("[auth:auth] Auth failure handled", .{});
+        std.log.scoped(.auth).debug("[auth.authenticateRequest] Auth failure handled", .{});
         return false; // Signal that response has been handled
     }
 
     // Authentication succeeded, store user ID in request for later use
     if (auth_result.user_id) |user_id| {
-        try request.server.logger.DEBUG("[auth:auth] Authentication succeeded, storing user_id={}", .{user_id});
+        std.log.scoped(.auth).debug("[auth.authenticateRequest] Authentication succeeded, storing user_id={}", .{user_id});
         var data = try request.data(.object);
         try data.put("user_id", user_id);
     }
 
-    try request.server.logger.DEBUG("[auth:auth] Authentication successful", .{});
+    std.log.scoped(.auth).debug("[auth.authenticateRequest] Authentication successful", .{});
     return true; // Continue processing
 }
 
@@ -81,17 +81,17 @@ pub fn authenticateRequest(self: *auth, request: *jetzig.http.Request) !bool {
 fn handleAuthPageRedirects(request: *jetzig.http.Request) !void {
     var data = try request.data(.object);
     if (data.get("user_id")) |user_id_value| {
-        try request.server.logger.DEBUG("[auth:redirect] Found user_id in request data: {}", .{user_id_value});
-        try request.server.logger.DEBUG("[auth:redirect] Authenticated user attempting to access auth page", .{});
+        std.log.scoped(.auth).debug("[auth.handleAuthPageRedirects] Found user_id in request data: {}", .{user_id_value});
+        std.log.scoped(.auth).debug("[auth.handleAuthPageRedirects] Authenticated user attempting to access auth page", .{});
 
         const is_htmx = request.headers.get("HX-Request") != null;
         if (is_htmx) {
             // For HTMX requests, use HX-Redirect header
-            try request.server.logger.DEBUG("[auth:redirect] Using HX-Redirect for HTMX request", .{});
+            std.log.scoped(.auth).debug("[auth.handleAuthPageRedirects] Using HX-Redirect for HTMX request", .{});
             try request.response.headers.append("HX-Redirect", "/dashboard");
         } else {
             // For normal requests, do a standard redirect
-            try request.server.logger.DEBUG("[auth:redirect] Using standard redirect for browser request", .{});
+            std.log.scoped(.auth).debug("[auth.handleAuthPageRedirects] Using standard redirect for browser request", .{});
             request.response.status_code = .found;
             try request.response.headers.append("Location", "/dashboard");
         }

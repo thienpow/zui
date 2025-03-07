@@ -27,11 +27,11 @@ pub const Global = struct {
 // Override default settings in `jetzig.config` here:
 pub const jetzig_options = struct {
     pub const middleware: []const type = &.{
-        jetzig.middleware.HtmxMiddleware,
+        // jetzig.middleware.HtmxMiddleware,
         // jetzig.middleware.CompressionMiddleware,
         @import("app/middleware/auth.zig"),
         @import("app/middleware/theme.zig"),
-        //@import("app/middleware/htmx.zig"),
+        @import("app/middleware/htmx.zig"),
     };
 
     pub const max_bytes_request_body: usize = std.math.pow(usize, 2, 16);
@@ -92,9 +92,6 @@ pub fn main() !void {
     // Initialize the configuration manager
     var config_manager = try ConfigManager.init(allocator);
     defer config_manager.deinit();
-    // std.log.debug("config_file_path = '{s}'", .{config_manager.config_file_path});
-    // std.log.debug("Redis config: host='{s}', port={d}, max_connections={d}", .{ config_manager.redis_config.host, config_manager.redis_config.port, config_manager.redis_config.max_connections });
-    // std.log.debug("Security config: storage.storage_type={}, token.access_token_ttl={d}", .{ config_manager.security_config.storage.storage_type, config_manager.security_config.tokens.access_token_ttl });
 
     // --- Use the loaded configurations ---
     const redis_pool_ptr = try allocator.create(PooledRedisClient);

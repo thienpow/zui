@@ -28,8 +28,8 @@ pub fn validateSessionBinding(session: Session, request: *jetzig.Request) !bool 
     const client_ip = ip_utils.getClientIp(request);
 
     // Debug: Log the client IP and session metadata
-    std.log.debug("[validateSessionBinding] Client IP: '{s}'", .{client_ip});
-    std.log.debug("[validateSessionBinding] Session metadata: ip='{s}', ua='{s}'", .{ session.metadata.ip_address orelse "null", session.metadata.user_agent orelse "null" });
+    std.log.scoped(.auth).debug("[validation.validateSessionBinding] Client IP: '{s}'", .{client_ip});
+    std.log.scoped(.auth).debug("[validation.validateSessionBinding] Session metadata: ip='{s}', ua='{s}'", .{ session.metadata.ip_address orelse "null", session.metadata.user_agent orelse "null" });
 
     // if (!isValidIPAddress(client_ip)) {
     //     std.log.warn("Invalid IP address format: {s}", .{client_ip});
@@ -44,12 +44,12 @@ pub fn validateSessionBinding(session: Session, request: *jetzig.Request) !bool 
             std.mem.eql(u8, stored_ip, "127.0.0.1") or
             std.mem.eql(u8, stored_ip, "unknown"))
         {
-            std.log.debug("[validateSessionBinding] Skipping validation for special IP: '{s}'", .{stored_ip});
+            std.log.scoped(.auth).debug("[validation.validateSessionBinding] Skipping validation for special IP: '{s}'", .{stored_ip});
             return true;
         }
 
         if (!std.mem.eql(u8, stored_ip, client_ip)) {
-            std.log.warn("Session IP mismatch - Stored: '{s}', Current: '{s}'", .{ stored_ip, client_ip });
+            std.log.warn("[validation.validateSessionBinding] Session IP mismatch - Stored: '{s}', Current: '{s}'", .{ stored_ip, client_ip });
             return ValidationError.SessionBindingMismatch;
         }
     }
@@ -60,7 +60,7 @@ pub fn validateSessionBinding(session: Session, request: *jetzig.Request) !bool 
     if (session.metadata.user_agent) |stored_ua| {
         // Optional: Could implement fuzzy matching or partial UA comparison
         if (!std.mem.eql(u8, stored_ua, current_ua)) {
-            std.log.warn("Session User-Agent mismatch - Stored: {s}, Current: {s}", .{ stored_ua, current_ua });
+            std.log.warn("[validation.validateSessionBinding] Session User-Agent mismatch - Stored: {s}, Current: {s}", .{ stored_ua, current_ua });
             return ValidationError.SessionBindingMismatch;
         }
     }

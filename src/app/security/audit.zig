@@ -79,7 +79,7 @@ pub const AuditLog = struct {
         };
 
         // Optional: Log the new list length
-        std.log.debug("Admin notifications list length: {}", .{list_length});
+        std.log.scoped(.auth).debug("Admin notifications list length: {}", .{list_length});
 
         // Optional: Set TTL for notification
         try client.expire("admin:notifications", 60 * 60 * 24);
@@ -88,7 +88,7 @@ pub const AuditLog = struct {
     pub fn log(self: *AuditLog, event: SecurityEvent, user_id: ?u64, metadata: ?AuditMetadata) !void {
         if (metadata) |m| {
             validation.validateMetadata(m) catch |err| {
-                std.log.err("Metadata validation failed: {}", .{err});
+                std.log.scoped(.auth).debug("Metadata validation failed: {}", .{err});
                 return error.MetadataValidationFailed;
             };
         }
