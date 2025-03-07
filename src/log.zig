@@ -9,12 +9,12 @@ pub fn log(
     // Skip specific debug logs
     if (level == .debug) {
         if (scope == .redis_client or
+            scope == .config or
+            scope == .auth or //comment this line if want to see the debug messages for authentication to appear.
             //  below is not implemented.
             //  To implement, replace existing std.log.debug in each module
             //  to example: std.log.scoped(.config_manager).debug
             //scope == .redis_pool or
-            scope == .config or
-            scope == .auth or
             scope == .other)
         {
             return;

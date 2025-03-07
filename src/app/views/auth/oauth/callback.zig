@@ -5,7 +5,7 @@ pub fn index(request: *jetzig.Request, _: *jetzig.Data) !jetzig.View {
     return request.render(.ok);
 }
 
-pub fn get(id: []const u8, request: *jetzig.Request, data: *jetzig.Data) !jetzig.View {
+pub fn get(id: []const u8, request: *jetzig.Request) !jetzig.View {
     _ = id; // Ignore the ID parameter since we don't need it
 
     // Extract provider ID from path
@@ -17,9 +17,7 @@ pub fn get(id: []const u8, request: *jetzig.Request, data: *jetzig.Data) !jetzig
     // Extract required parameters and convert to strings
     const code = (params.get("code").?.string).value;
     const state = (params.get("state").?.string).value;
-    try request.server.logger.DEBUG("[view:auth:oauth:callback] code {s}, {s}", .{ code, state });
-    //const return_to_value = params.get("return_to");
-    //const return_to = if (return_to_value) |value| value.string.value else null;
+    //try request.server.logger.DEBUG("[view:auth:oauth:callback] code {s}, {s}", .{ code, state });
 
     // Error handling: check for error param from OAuth provider
     const error_msg = params.get("error");
@@ -35,10 +33,10 @@ pub fn get(id: []const u8, request: *jetzig.Request, data: *jetzig.Data) !jetzig
 
     // Get the default redirect URL from config
     const default_redirect_url = request.global.security.oauth.config.default_redirect;
-    var root = try data.object();
-    try root.put("default_redirect_url", default_redirect_url);
+    const data = try request.data(.object);
+    try data.put("default_redirect_url", default_redirect_url);
 
     // Redirect to dashboard or return_to URL
-    return request.render(.created);
-    // return request.redirect(redirect_url, .found);
+    return request.render(.created); // must use this render method and use js to redirect in order to have the state_cookie stored and available for checking.
+    // return request.redirect(default_redirect_url, .found); setting redirect header won't work, it will redirect before the state_cookie is stored.
 }

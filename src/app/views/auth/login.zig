@@ -40,26 +40,26 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
         .email = params.email,
         .password = params.password,
     }) catch |err| {
-        std.log.debug("[route.login] Authentication failed with error: {s}", .{@errorName(err)});
+        std.log.scoped(.auth).debug("[route.login] Authentication failed with error: {s}", .{@errorName(err)});
         switch (err) {
             SecurityError.AccountLocked => {
-                std.log.debug("[route.login] Account locked, returning 403", .{});
+                std.log.scoped(.auth).debug("[route.login] Account locked, returning 403", .{});
                 return request.fail(.forbidden); // 403
             },
             SecurityError.RateLimitExceeded => {
-                std.log.debug("[route.login] Rate limit exceeded, returning 429", .{});
+                std.log.scoped(.auth).debug("[route.login] Rate limit exceeded, returning 429", .{});
                 return request.fail(.too_many_requests); // 429
             },
             SecurityError.UserNotFound => {
-                std.log.debug("[route.login] User not found, returning 404", .{});
+                std.log.scoped(.auth).debug("[route.login] User not found, returning 404", .{});
                 return request.fail(.not_found); // 404
             },
             SecurityError.InvalidCredentials => {
-                std.log.debug("[route.login] Invalid credentials, returning 401", .{});
+                std.log.scoped(.auth).debug("[route.login] Invalid credentials, returning 401", .{});
                 return request.fail(.unauthorized); // 401
             },
             SecurityError.ValidationError => {
-                std.log.debug("[route.login] Validation error, returning 400", .{});
+                std.log.scoped(.auth).debug("[route.login] Validation error, returning 400", .{});
                 return request.fail(.bad_request); // 400
             },
             else => {
@@ -68,7 +68,7 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
             },
         }
     };
-    std.log.debug("[route.login] Authentication succeeded", .{});
+    std.log.scoped(.auth).debug("[route.login] Authentication succeeded", .{});
     // ... proceed with successful response ...
 
     return request.render(.created);
