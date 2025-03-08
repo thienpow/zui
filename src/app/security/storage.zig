@@ -172,47 +172,95 @@ pub const SessionStorage = struct {
     }
 
     pub fn cleanupExpiredSessions(self: *SessionStorage) !void {
+        std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Starting cleanup of expired sessions", .{});
+
         var client = try self.redis_pool.acquire();
         defer self.redis_pool.release(client);
+        std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Acquired Redis client", .{});
 
         // Use Redis SCAN to iterate over session keys
-        var cursor: u64 = 0;
+        var cursor: []const u8 = "0";
         const pattern = "session:*";
         const batch_size: u64 = 100;
+        var session_count: usize = 0;
+        var expired_session_count: usize = 0;
+
+        std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Starting scan of '{s}' with batch size {d}", .{ pattern, batch_size });
 
         while (true) {
+            std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Running SCAN with cursor '{s}'", .{cursor});
             const scan_result = try client.scan(cursor, pattern, batch_size);
             cursor = scan_result.cursor;
 
+            std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Got {d} session keys, next cursor: '{s}'", .{ scan_result.keys.len, cursor });
+
             for (scan_result.keys) |key| {
+                session_count += 1;
+                std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Checking TTL for key: '{s}'", .{key});
+
                 if (try client.ttl(key)) |ttl| {
+                    std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Key '{s}' has TTL: {d}", .{ key, ttl });
+
                     if (ttl <= 0) {
+                        std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Deleting expired key: '{s}'", .{key});
                         _ = try client.del(key);
+                        expired_session_count += 1;
                     }
+                } else {
+                    std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Failed to get TTL for key: '{s}'", .{key});
                 }
             }
 
-            if (cursor == 0) break;
+            // Check if cursor is "0", not the integer 0
+            if (std.mem.eql(u8, cursor, "0")) {
+                std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Completed scan of session keys", .{});
+                break;
+            }
         }
 
+        std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Processed {d} session keys, deleted {d} expired sessions", .{ session_count, expired_session_count });
+
         // Also clean up token-based keys
-        cursor = 0;
+        cursor = "0";
         const token_pattern = "session_token:*";
+        var token_count: usize = 0;
+        var expired_token_count: usize = 0;
+
+        std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Starting scan of '{s}' with batch size {d}", .{ token_pattern, batch_size });
 
         while (true) {
+            std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Running SCAN with cursor '{s}'", .{cursor});
             const scan_result = try client.scan(cursor, token_pattern, batch_size);
             cursor = scan_result.cursor;
 
+            std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Got {d} token keys, next cursor: '{s}'", .{ scan_result.keys.len, cursor });
+
             for (scan_result.keys) |key| {
+                token_count += 1;
+                std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Checking TTL for key: '{s}'", .{key});
+
                 if (try client.ttl(key)) |ttl| {
+                    std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Key '{s}' has TTL: {d}", .{ key, ttl });
+
                     if (ttl <= 0) {
+                        std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Deleting expired key: '{s}'", .{key});
                         _ = try client.del(key);
+                        expired_token_count += 1;
                     }
+                } else {
+                    std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Failed to get TTL for key: '{s}'", .{key});
                 }
             }
 
-            if (cursor == 0) break;
+            // Check if cursor is "0", not the integer 0
+            if (std.mem.eql(u8, cursor, "0")) {
+                std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Completed scan of token keys", .{});
+                break;
+            }
         }
+
+        std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Processed {d} token keys, deleted {d} expired tokens", .{ token_count, expired_token_count });
+        std.log.scoped(.session_storage).debug("[session_storage.cleanupExpiredSessions] Cleanup completed successfully", .{});
     }
 
     pub fn getUserActiveSessions(self: *SessionStorage, user_id: u64) ![]Session {

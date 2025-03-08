@@ -177,8 +177,8 @@ pub const SessionManager = struct {
         }
     }
 
-    pub fn cleanup(self: *SessionManager) !void {
+    pub fn cleanup(self: *SessionManager, request: *jetzig.Request) !void {
         try self.storage.cleanupExpiredSessions();
-        try self.clearSessionCookie();
+        try self.clearSessionCookie(request);
     }
 };

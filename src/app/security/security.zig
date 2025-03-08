@@ -467,26 +467,30 @@ pub const Security = struct {
         return session;
     }
 
-    pub fn logout(self: *Security, request: *jetzig.Request, response: *jetzig.Response) !void {
-        // if (self.getAuthToken(request)) |token| {
-        //     try self.session.invalidate(token);
-        //     try self.token.invalidateToken(token);
-        //     try self.audit.log(.logout, null, .{
-        //         .action_details = "User logout",
-        //         .ip_address = try self.getIdentifier(request),
-        //     });
-        // }
+    pub fn logout(self: *Security, request: *jetzig.Request) !void {
+        std.log.scoped(.security).debug("[security.logout] Starting logout process", .{});
 
-        if (self.session.getSessionTokenFromCookie(request)) |token| {
-            try self.session.invalidate(token);
+        if (try self.session.getSessionTokenFromCookie(request)) |token| {
+            std.log.scoped(.security).debug("[security.logout] Found session token: {s}", .{token});
+
+            std.log.scoped(.security).debug("[security.logout] Cleaning up session", .{});
+            try self.session.cleanup(request);
+
+            std.log.scoped(.security).debug("[security.logout] Invalidating token", .{});
             try self.token.invalidateToken(token);
+
+            const ip = ip_utils.getClientIp(request);
+            std.log.scoped(.security).debug("[security.logout] Logging audit event from IP: {s}", .{ip});
+
             try self.audit.log(.logout, null, .{
                 .action_details = "User logout",
-                .ip_address = ip_utils.getClientIp(request),
+                .ip_address = ip,
             });
+
+            std.log.scoped(.security).debug("[security.logout] Logout process completed successfully", .{});
+        } else {
+            std.log.scoped(.security).debug("[security.logout] No session token found in cookie", .{});
         }
-        // Clear Cookie
-        try self.session.clearSessionCookie(response);
     }
 
     fn getAuthToken(self: *Security, request: *jetzig.Request) ?[]const u8 {

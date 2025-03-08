@@ -55,3 +55,8 @@ pub const ResponseType = enum {
     BulkString,
     Array,
 };
+
+pub const ScanResult = struct {
+    cursor: []const u8,
+    keys: [][]const u8,
+};

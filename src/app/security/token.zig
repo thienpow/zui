@@ -84,17 +84,9 @@ pub const TokenManager = struct {
         const refresh_key = try std.fmt.allocPrint(self.allocator, "refresh_token:{s}", .{token});
         defer self.allocator.free(refresh_key);
 
-        try client.del(access_key) catch |err| switch (err) {
-            redis.RedisError.ConnectionFailed => return SecurityError.StorageError,
-            redis.RedisError.CommandFailed => return SecurityError.StorageError,
-            else => return err,
-        };
+        _ = try client.del(access_key);
 
-        try client.del(refresh_key) catch |err| switch (err) {
-            redis.RedisError.ConnectionFailed => return SecurityError.StorageError,
-            redis.RedisError.CommandFailed => return SecurityError.StorageError,
-            else => return err,
-        };
+        _ = try client.del(refresh_key);
     }
 
     fn createCSRFToken(self: *TokenManager) ![]const u8 {

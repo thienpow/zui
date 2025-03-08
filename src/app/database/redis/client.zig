@@ -6,6 +6,7 @@ pub const pool = @import("pool.zig");
 pub const RedisError = types.RedisError;
 pub const ResponseType = types.ResponseType;
 pub const RedisClientConfig = types.RedisClientConfig;
+pub const ScanResult = types.ScanResult;
 pub const BufferPool = pool.BufferPool;
 
 pub const RedisClient = struct {
@@ -662,5 +663,215 @@ pub const RedisClient = struct {
         // SREM returns an integer (number of elements removed)
         if (!std.mem.startsWith(u8, response, ":")) return RedisError.InvalidResponse;
         return try std.fmt.parseInt(u64, response[1 .. response.len - 2], 10);
+    }
+
+    pub fn scan(self: *RedisClient, cursor: []const u8, match_pattern: ?[]const u8, count: ?u32) !ScanResult {
+        std.log.scoped(.redis_client).debug("[redis_client.scan] Starting with cursor: '{s}'", .{cursor});
+
+        // Build the command
+        var cmd_builder = std.ArrayList(u8).init(self.allocator);
+        defer cmd_builder.deinit();
+
+        // Start with the command array header
+        var num_args: usize = 2; // SCAN + cursor
+        if (match_pattern != null) num_args += 2; // MATCH + pattern
+        if (count != null) num_args += 2; // COUNT + value
+
+        try std.fmt.format(cmd_builder.writer(), "*{d}\r\n$4\r\nSCAN\r\n${d}\r\n{s}\r\n", .{ num_args, cursor.len, cursor });
+
+        // Add MATCH if specified
+        if (match_pattern) |pattern| {
+            try std.fmt.format(cmd_builder.writer(), "$5\r\nMATCH\r\n${d}\r\n{s}\r\n", .{ pattern.len, pattern });
+        }
+
+        // Add COUNT if specified
+        if (count) |c| {
+            const count_str = try std.fmt.allocPrint(self.allocator, "{d}", .{c});
+            defer self.allocator.free(count_str);
+            try std.fmt.format(cmd_builder.writer(), "$5\r\nCOUNT\r\n${d}\r\n{s}\r\n", .{ count_str.len, count_str });
+        }
+
+        const cmd = try cmd_builder.toOwnedSlice();
+        defer self.allocator.free(cmd);
+
+        std.log.scoped(.redis_client).debug("[redis_client.scan] Executing command: '{s}'", .{cmd});
+        const response = try self.executeCommand(cmd);
+        defer self.allocator.free(response);
+
+        std.log.scoped(.redis_client).debug("[redis_client.scan] Response received: '{s}'", .{response});
+
+        // SCAN returns an array with two elements:
+        // 1. The new cursor
+        // 2. An array of keys
+        if (response.len == 0 or response[0] != '*') {
+            std.log.scoped(.redis_client).debug("[redis_client.scan] Invalid response format: expected '*'", .{});
+            return RedisError.InvalidResponse;
+        }
+
+        // Parse the array size (should be 2)
+        const array_size_end = std.mem.indexOf(u8, response[1..], "\r\n") orelse {
+            std.log.scoped(.redis_client).debug("[redis_client.scan] Invalid response: cannot find array size delimiter", .{});
+            return RedisError.InvalidResponse;
+        };
+
+        const array_size = try std.fmt.parseInt(usize, response[1 .. 1 + array_size_end], 10);
+        if (array_size != 2) {
+            std.log.scoped(.redis_client).debug("[redis_client.scan] Invalid response: expected array size 2, got {d}", .{array_size});
+            return RedisError.InvalidResponse;
+        }
+
+        var pos = 1 + array_size_end + 2; // Skip *2\r\n
+        if (pos >= response.len) {
+            return RedisError.InvalidResponse;
+        }
+
+        // Parse the first element (new cursor)
+        if (response[pos] != '$') {
+            std.log.scoped(.redis_client).debug("[redis_client.scan] Invalid response: expected '$' for cursor", .{});
+            return RedisError.InvalidResponse;
+        }
+
+        const cursor_len_end = std.mem.indexOf(u8, response[pos + 1 ..], "\r\n") orelse return RedisError.InvalidResponse;
+        const cursor_len = try std.fmt.parseInt(usize, response[pos + 1 .. pos + 1 + cursor_len_end], 10);
+        pos += 1 + cursor_len_end + 2; // Skip $len\r\n
+
+        if (pos + cursor_len > response.len) {
+            return RedisError.InvalidResponse;
+        }
+
+        const new_cursor = try self.allocator.dupe(u8, response[pos .. pos + cursor_len]);
+        errdefer self.allocator.free(new_cursor);
+        pos += cursor_len + 2; // Skip cursor\r\n
+
+        if (pos >= response.len) {
+            return RedisError.InvalidResponse;
+        }
+
+        // Parse the second element (array of keys)
+        if (response[pos] != '*') {
+            std.log.scoped(.redis_client).debug("[redis_client.scan] Invalid response: expected '*' for keys array", .{});
+            return RedisError.InvalidResponse;
+        }
+
+        const keys_count_end = std.mem.indexOf(u8, response[pos + 1 ..], "\r\n") orelse {
+            std.log.scoped(.redis_client).debug("[redis_client.scan] Invalid response: cannot find keys count delimiter", .{});
+            return RedisError.InvalidResponse;
+        };
+
+        const keys_count = try std.fmt.parseInt(usize, response[pos + 1 .. pos + 1 + keys_count_end], 10);
+        pos += 1 + keys_count_end + 2; // Skip *count\r\n
+
+        std.log.scoped(.redis_client).debug("[redis_client.scan] Found {d} keys", .{keys_count});
+
+        var keys = std.ArrayList([]const u8).init(self.allocator);
+        errdefer {
+            for (keys.items) |key| {
+                self.allocator.free(key);
+            }
+            keys.deinit();
+        }
+
+        // Count actual keys in the response (may be fewer than reported)
+        var i: usize = 0;
+        var current_pos = pos;
+
+        while (i < keys_count and current_pos < response.len) {
+            if (response[current_pos] != '$') {
+                std.log.scoped(.redis_client).debug("[redis_client.scan] Invalid response format at key {d}", .{i});
+                break;
+            }
+
+            const key_len_end = std.mem.indexOf(u8, response[current_pos + 1 ..], "\r\n") orelse break;
+            const key_len = std.fmt.parseInt(usize, response[current_pos + 1 .. current_pos + 1 + key_len_end], 10) catch break;
+
+            current_pos += 1 + key_len_end + 2; // Skip $len\r\n
+            if (current_pos + key_len + 2 > response.len) break;
+
+            current_pos += key_len + 2; // Skip key\r\n
+            i += 1;
+        }
+
+        const actual_keys_count = i;
+        std.log.scoped(.redis_client).debug("[redis_client.scan] Found {d} actual keys in response (expected {d})", .{ actual_keys_count, keys_count });
+
+        // Now parse the keys we know are actually there
+        i = 0;
+        while (i < actual_keys_count) : (i += 1) {
+            if (response[pos] != '$') {
+                std.log.scoped(.redis_client).debug("[redis_client.scan] Invalid response: expected '$' for key {d}", .{i});
+                break;
+            }
+
+            const key_len_end = std.mem.indexOf(u8, response[pos + 1 ..], "\r\n") orelse {
+                std.log.scoped(.redis_client).debug("[redis_client.scan] Invalid response: cannot find key length delimiter for key {d}", .{i});
+                break;
+            };
+
+            const key_len = try std.fmt.parseInt(usize, response[pos + 1 .. pos + 1 + key_len_end], 10);
+            pos += 1 + key_len_end + 2; // Skip $len\r\n
+
+            if (pos + key_len > response.len) {
+                std.log.scoped(.redis_client).debug("[redis_client.scan] Key {d} extends beyond response", .{i});
+                break;
+            }
+
+            const key = try self.allocator.dupe(u8, response[pos .. pos + key_len]);
+            try keys.append(key);
+            pos += key_len + 2; // Skip key\r\n
+        }
+
+        std.log.scoped(.redis_client).debug("[redis_client.scan] Successfully processed response, new cursor: '{s}', keys: {d}", .{ new_cursor, keys.items.len });
+        return ScanResult{
+            .cursor = new_cursor,
+            .keys = try keys.toOwnedSlice(),
+        };
+    }
+
+    /// Higher-level SCAN function that iterates through all matching keys
+    pub fn scanAll(self: *RedisClient, match_pattern: ?[]const u8, count: ?u32) ![][]const u8 {
+        std.log.scoped(.redis_client).debug("[redis_client.scanAll] Starting with pattern: '{s}', count: {?}", .{ match_pattern orelse "null", count });
+
+        var all_keys = std.ArrayList([]const u8).init(self.allocator);
+        errdefer {
+            for (all_keys.items) |key| {
+                self.allocator.free(key);
+            }
+            all_keys.deinit();
+        }
+
+        var cursor = try self.allocator.dupe(u8, "0");
+        defer self.allocator.free(cursor);
+
+        var done = false;
+        while (!done) {
+            std.log.scoped(.redis_client).debug("[redis_client.scanAll] Scanning with cursor: '{s}'", .{cursor});
+
+            const scan_result = try self.scan(cursor, match_pattern, count);
+            self.allocator.free(cursor);
+
+            // Update cursor for next iteration
+            cursor = scan_result[0];
+            const batch_keys = scan_result[1];
+            defer {
+                // Free the batch keys from this iteration
+                for (batch_keys) |key| {
+                    self.allocator.free(key);
+                }
+                self.allocator.free(batch_keys);
+            }
+
+            // Add keys to the result array
+            for (batch_keys) |key| {
+                try all_keys.append(try self.allocator.dupe(u8, key));
+            }
+
+            // Check if we've completed the scan
+            if (std.mem.eql(u8, cursor, "0")) {
+                done = true;
+            }
+        }
+
+        std.log.scoped(.redis_client).debug("[redis_client.scanAll] Completed scan with {d} keys found", .{all_keys.items.len});
+        return all_keys.toOwnedSlice();
     }
 };
