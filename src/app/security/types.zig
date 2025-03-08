@@ -1,3 +1,4 @@
+const std = @import("std");
 const errors = @import("errors.zig");
 
 pub const SecurityEvent = enum {
@@ -102,6 +103,30 @@ pub const Session = struct {
     created_at: i64,
     expires_at: i64,
     metadata: SessionMetadata,
+
+    pub fn deepCopy(self: *const Session, allocator: std.mem.Allocator) !Session {
+        return Session{
+            .id = try allocator.dupe(u8, self.id),
+            .user_id = self.user_id,
+            .token = try allocator.dupe(u8, self.token),
+            .created_at = self.created_at,
+            .expires_at = self.expires_at,
+            .metadata = SessionMetadata{
+                .ip_address = if (self.metadata.ip_address) |ip|
+                    try allocator.dupe(u8, ip)
+                else
+                    null,
+                .user_agent = if (self.metadata.user_agent) |ua|
+                    try allocator.dupe(u8, ua)
+                else
+                    null,
+                .device_id = if (self.metadata.device_id) |ua|
+                    try allocator.dupe(u8, ua)
+                else
+                    null,
+            },
+        };
+    }
 };
 
 pub const SessionMetadata = struct {

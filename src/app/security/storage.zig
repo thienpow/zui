@@ -29,7 +29,6 @@ pub const SessionStorage = struct {
         };
 
         std.log.scoped(.auth).debug("[storage.getSessionByToken] Raw data retrieved: {s}", .{data});
-        // DON'T defer free the data yet - we need it until we're done with the session
 
         // Use allocate option to ensure strings are properly owned
         const options = std.json.ParseOptions{
@@ -59,7 +58,6 @@ pub const SessionStorage = struct {
         std.log.scoped(.auth).debug("[storage.getSessionById] session_id={s}", .{session_id});
         var client = try self.redis_pool.acquire();
         defer self.redis_pool.release(client);
-
         const key = try std.fmt.allocPrint(self.allocator, "session:{s}", .{session_id});
         defer self.allocator.free(key);
 
@@ -69,21 +67,29 @@ pub const SessionStorage = struct {
             return null;
         };
 
-        defer self.allocator.free(data);
+        std.log.scoped(.auth).debug("[storage.getSessionById] Raw data retrieved: {s}", .{data});
 
-        const parsed = std.json.parseFromSlice(
+        // Use allocate option to ensure strings are properly owned
+        const options = std.json.ParseOptions{
+            .allocate = .alloc_always, // This makes it allocate strings
+            .ignore_unknown_fields = false,
+        };
+
+        const session = std.json.parseFromSliceLeaky(
             Session,
             self.allocator,
             data,
-            .{},
+            options,
         ) catch |err| {
+            self.allocator.free(data); // Free data before returning
             std.log.scoped(.auth).debug("Failed to parse session data: {}", .{err});
-            std.log.scoped(.auth).debug("Raw session data: {s}", .{data});
             return null;
         };
-        defer parsed.deinit();
 
-        return parsed.value;
+        // Now we can free the original data
+        self.allocator.free(data);
+        std.log.scoped(.auth).debug("[storage.getSessionById] Parsed session ID: {s}", .{session.id});
+        return session;
     }
 
     pub fn invalidateSession(self: *SessionStorage, session_id: []const u8) !void {
