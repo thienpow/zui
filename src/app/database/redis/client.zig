@@ -360,6 +360,17 @@ pub const RedisClient = struct {
         return try std.fmt.parseInt(u64, response[1 .. response.len - 2], 10);
     }
 
+    /// Checks if a key exists in Redis
+    pub fn exists(self: *Self, key: []const u8) !u64 {
+        if (key.len == 0) return RedisError.InvalidArgument;
+        const cmd = try self.formatCommand("*2\r\n$6\r\nEXISTS\r\n${d}\r\n{s}\r\n", .{ key.len, key });
+        defer self.allocator.free(cmd);
+        const response = try self.executeCommand(cmd);
+        defer self.allocator.free(response);
+        if (!std.mem.startsWith(u8, response, ":")) return RedisError.InvalidResponse;
+        return try std.fmt.parseInt(u64, response[1 .. response.len - 2], 10);
+    }
+
     /// Sets a key-value pair with expiration
     pub fn setEx(self: *Self, key: []const u8, value: []const u8, ttl_seconds: i64) !void {
         if (key.len == 0 or value.len == 0 or ttl_seconds <= 0) return RedisError.InvalidArgument;
@@ -503,31 +514,45 @@ pub const RedisClient = struct {
         var cmd_builder = std.ArrayList(u8).init(self.allocator);
         defer cmd_builder.deinit();
 
-        var num_args: usize = 2;
-        if (match_pattern != null) num_args += 2;
-        if (count != null) num_args += 2;
+        // Build the SCAN command
+        try std.fmt.format(cmd_builder.writer(), "*{d}\r\n$4\r\nSCAN\r\n${d}\r\n{s}\r\n", .{
+            2 + @as(usize, if (match_pattern != null) 2 else 0) + @as(usize, if (count != null) 2 else 0),
+            cursor.len,
+            cursor,
+        });
 
-        try std.fmt.format(cmd_builder.writer(), "*{d}\r\n$4\r\nSCAN\r\n${d}\r\n{s}\r\n", .{ num_args, cursor.len, cursor });
         if (match_pattern) |pattern| {
-            try std.fmt.format(cmd_builder.writer(), "$5\r\nMATCH\r\n${d}\r\n{s}\r\n", .{ pattern.len, pattern });
+            try std.fmt.format(cmd_builder.writer(), "$5\r\nMATCH\r\n${d}\r\n{s}\r\n", .{
+                pattern.len,
+                pattern,
+            });
         }
+
         if (count) |c| {
             const count_str = try std.fmt.allocPrint(self.allocator, "{d}", .{c});
             defer self.allocator.free(count_str);
-            try std.fmt.format(cmd_builder.writer(), "$5\r\nCOUNT\r\n${d}\r\n{s}\r\n", .{ count_str.len, count_str });
+            try std.fmt.format(cmd_builder.writer(), "$5\r\nCOUNT\r\n${d}\r\n{s}\r\n", .{
+                count_str.len,
+                count_str,
+            });
         }
 
         const cmd = try cmd_builder.toOwnedSlice();
         defer self.allocator.free(cmd);
+
         const response = try self.executeCommand(cmd);
         defer self.allocator.free(response);
 
+        // Parse the response
         if (response[0] != '*') return RedisError.InvalidResponse;
+
         const array_size_end = std.mem.indexOf(u8, response[1..], "\r\n") orelse return RedisError.InvalidResponse;
         const array_size = try std.fmt.parseInt(usize, response[1 .. 1 + array_size_end], 10);
         if (array_size != 2) return RedisError.InvalidResponse;
 
         var pos = 1 + array_size_end + 2;
+
+        // Parse the cursor
         if (response[pos] != '$') return RedisError.InvalidResponse;
         const cursor_len_end = std.mem.indexOf(u8, response[pos + 1 ..], "\r\n") orelse return RedisError.InvalidResponse;
         const cursor_len = try std.fmt.parseInt(usize, response[pos + 1 .. pos + 1 + cursor_len_end], 10);
@@ -537,6 +562,7 @@ pub const RedisClient = struct {
         errdefer self.allocator.free(new_cursor);
         pos += cursor_len + 2;
 
+        // Parse the keys
         if (response[pos] != '*') return RedisError.InvalidResponse;
         const keys_count_end = std.mem.indexOf(u8, response[pos + 1 ..], "\r\n") orelse return RedisError.InvalidResponse;
         const keys_count = try std.fmt.parseInt(usize, response[pos + 1 .. pos + 1 + keys_count_end], 10);
