@@ -97,7 +97,10 @@ pub fn main() !void {
     const redis_pool_ptr = try allocator.create(PooledRedisClient);
     errdefer allocator.destroy(redis_pool_ptr);
 
-    redis_pool_ptr.* = try PooledRedisClient.init(allocator, config_manager.redis_config);
+    redis_pool_ptr.* = PooledRedisClient.init(allocator, config_manager.redis_config) catch |err| {
+        std.log.err("Failed to initialize Redis pool: {}", .{err});
+        return err;
+    };
 
     var security = try Security.init(allocator, config_manager.security_config, redis_pool_ptr);
     defer security.deinit();

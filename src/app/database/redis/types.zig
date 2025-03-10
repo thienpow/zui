@@ -32,6 +32,7 @@ pub const RedisError = error{
     SystemResources,
     InputOutput,
     NoAvailableConnections,
+    WouldBlock,
 };
 
 pub const RedisClientConfig = struct {
