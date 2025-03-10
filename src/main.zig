@@ -98,7 +98,7 @@ pub fn main() !void {
     errdefer allocator.destroy(redis_pool_ptr);
 
     redis_pool_ptr.* = PooledRedisClient.init(allocator, config_manager.redis_config) catch |err| {
-        std.log.err("Failed to initialize Redis pool: {}", .{err});
+        std.log.scoped(.main).err("Failed to initialize Redis pool: {}", .{err});
         return err;
     };
 
