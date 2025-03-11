@@ -468,28 +468,28 @@ pub const Security = struct {
     }
 
     pub fn logout(self: *Security, request: *jetzig.Request) !void {
-        std.log.scoped(.security).debug("[Security.logout] Starting logout process", .{});
+        std.log.scoped(.auth).debug("[Security.logout] Starting logout process", .{});
 
         if (try self.session.getSessionTokenFromCookie(request)) |token| {
-            std.log.scoped(.security).debug("[Security.logout] Found session token: {s}", .{token});
+            std.log.scoped(.auth).debug("[Security.logout] Found session token: {s}", .{token});
 
-            std.log.scoped(.security).debug("[Security.logout] Cleaning up session", .{});
+            std.log.scoped(.auth).debug("[Security.logout] Cleaning up session", .{});
             try self.session.cleanup(request);
 
-            std.log.scoped(.security).debug("[Security.logout] Invalidating token", .{});
+            std.log.scoped(.auth).debug("[Security.logout] Invalidating token", .{});
             try self.token.invalidateToken(token);
 
             const ip = ip_utils.getClientIp(request);
-            std.log.scoped(.security).debug("[Security.logout] Logging audit event from IP: {s}", .{ip});
+            std.log.scoped(.auth).debug("[Security.logout] Logging audit event from IP: {s}", .{ip});
 
             try self.audit.log(.logout, null, .{
                 .action_details = "User logout",
                 .ip_address = ip,
             });
 
-            std.log.scoped(.security).debug("[Security.logout] Logout process completed successfully", .{});
+            std.log.scoped(.auth).debug("[Security.logout] Logout process completed successfully", .{});
         } else {
-            std.log.scoped(.security).debug("[Security.logout] No session token found in cookie", .{});
+            std.log.scoped(.auth).debug("[Security.logout] No session token found in cookie", .{});
         }
     }
 
