@@ -24,10 +24,11 @@ pub fn log(
 
     // Skip specific debug logs
     if (level == .debug) {
-        if ( //scope == .redis_client or
-        //scope == .config or
-        //scope == .auth or
-        scope == .other) {
+        if (scope == .redis or
+            scope == .config or
+            scope == .auth or
+            scope == .other)
+        {
             return;
         }
     }

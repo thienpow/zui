@@ -79,7 +79,7 @@ pub const AuditLog = struct {
         };
 
         // Optional: Log the new list length
-        std.log.scoped(.auth).debug("Admin notifications list length: {}", .{list_length});
+        std.log.scoped(.auth).debug("[AuditLog.notifyAdmins] Admin notifications list length: {}", .{list_length});
 
         // Optional: Set TTL for notification
         try client.expire("admin:notifications", 60 * 60 * 24);

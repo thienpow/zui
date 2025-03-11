@@ -119,7 +119,7 @@ pub const PooledRedisClient = struct {
         if (self.available.items.len < self.config.max_connections) {
             self.available.append(client) catch |err| {
                 // Handle append failure (e.g., out of memory)
-                std.log.err("Failed to append client to available pool: {}", .{err});
+                std.log.scoped(.redis).err("[PooledRedisClient.release] Failed to append client to available pool: {}", .{err});
                 client.disconnect();
                 self.allocator.destroy(client);
                 _ = self.removeFromAllClients(client);

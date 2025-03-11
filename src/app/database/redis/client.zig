@@ -29,7 +29,7 @@ pub const RedisClient = struct {
         if (idle_time > self.config.idle_timeout_ms) return false;
 
         const ping_response = self.ping() catch |err| {
-            std.log.scoped(.redis_client).debug("Health check failed: {}", .{err});
+            std.log.scoped(.redis).debug("Health check failed: {}", .{err});
             return false;
         };
         defer self.allocator.free(ping_response);
@@ -71,7 +71,7 @@ pub const RedisClient = struct {
         };
 
         const ping_response = client.ping() catch |err| {
-            std.log.scoped(.redis_client).debug("Initial ping failed: {}", .{err});
+            std.log.scoped(.redis).debug("Initial ping failed: {}", .{err});
             client.disconnect();
             return RedisError.ConnectionFailed;
         };
@@ -88,10 +88,10 @@ pub const RedisClient = struct {
     pub fn reconnect(self: *Self) RedisError!void {
         if (self.connected) self.disconnect();
 
-        std.log.scoped(.redis_client).debug("Starting reconnect with max attempts: {d}", .{self.max_reconnect_attempts});
+        std.log.scoped(.redis).debug("Starting reconnect with max attempts: {d}", .{self.max_reconnect_attempts});
 
         while (self.reconnect_attempts < self.max_reconnect_attempts) : (self.reconnect_attempts += 1) {
-            std.log.scoped(.redis_client).debug("Reconnection attempt {d}/{d}", .{ self.reconnect_attempts + 1, self.max_reconnect_attempts });
+            std.log.scoped(.redis).debug("Reconnection attempt {d}/{d}", .{ self.reconnect_attempts + 1, self.max_reconnect_attempts });
             self.socket = std.net.tcpConnectToHost(self.allocator, self.config.host, self.config.port) catch |err| {
                 if (self.reconnect_attempts + 1 == self.max_reconnect_attempts) {
                     return switch (err) {
@@ -407,20 +407,20 @@ pub const RedisClient = struct {
         };
         defer self.allocator.free(cmd);
 
-        std.log.scoped(.redis_client).debug("[redis_client.ttl] Formatted command: '{s}'", .{cmd});
-        std.log.scoped(.redis_client).debug("[redis_client.ttl] Sending TTL command for key: '{s}'", .{key});
+        std.log.scoped(.redis).debug("[RedisClient.ttl] Formatted command: '{s}'", .{cmd});
+        std.log.scoped(.redis).debug("[RedisClient.ttl] Sending TTL command for key: '{s}'", .{key});
 
         const response = self.executeCommand(cmd) catch |err| {
-            std.log.scoped(.redis_client).err("[redis_client.ttl] Command execution failed: {}", .{err});
+            std.log.scoped(.redis).err("[RedisClient.ttl] Command execution failed: {}", .{err});
             return err;
         };
         defer self.allocator.free(response);
 
-        std.log.scoped(.redis_client).debug("[redis_client.ttl] Received response: '{s}'", .{response});
+        std.log.scoped(.redis).debug("[RedisClient.ttl] Received response: '{s}'", .{response});
 
         // More thorough response validation
         if (response.len < 3 or response[response.len - 2] != '\r' or response[response.len - 1] != '\n') {
-            std.log.scoped(.redis_client).err("[redis_client.ttl] Invalid response format (len: {d}): '{s}'", .{ response.len, response });
+            std.log.scoped(.redis).err("[RedisClient.ttl] Invalid response format (len: {d}): '{s}'", .{ response.len, response });
             return RedisError.InvalidResponse;
         }
 
@@ -428,29 +428,29 @@ pub const RedisClient = struct {
             ':' => {
                 // Check if there's actual content between ':' and '\r\n'
                 if (response.len <= 3) {
-                    std.log.scoped(.redis_client).err("[redis_client.ttl] Invalid integer response: '{s}'", .{response});
+                    std.log.scoped(.redis).err("[RedisClient.ttl] Invalid integer response: '{s}'", .{response});
                     return RedisError.InvalidResponse;
                 }
 
                 const value = std.fmt.parseInt(i64, response[1 .. response.len - 2], 10) catch |err| {
-                    std.log.scoped(.redis_client).err("[redis_client.ttl] Failed to parse integer: {} for response: '{s}'", .{ err, response });
+                    std.log.scoped(.redis).err("[RedisClient.ttl] Failed to parse integer: {} for response: '{s}'", .{ err, response });
                     return RedisError.InvalidResponse;
                 };
 
-                std.log.scoped(.redis_client).debug("[redis_client.ttl] Parsed TTL: {d}", .{value});
+                std.log.scoped(.redis).debug("[RedisClient.ttl] Parsed TTL: {d}", .{value});
                 if (value == -2) return null; // Key doesn't exist
                 if (value < -2) {
-                    std.log.scoped(.redis_client).warn("[redis_client.ttl] Unexpected negative value: {d}", .{value});
+                    std.log.scoped(.redis).warn("[RedisClient.ttl] Unexpected negative value: {d}", .{value});
                     return RedisError.InvalidResponse;
                 }
                 return value; // Includes -1 (no expiration) and positive TTLs
             },
             '-' => {
-                std.log.scoped(.redis_client).err("[redis_client.ttl] Redis error response: '{s}'", .{response});
+                std.log.scoped(.redis).err("[RedisClient.ttl] Redis error response: '{s}'", .{response});
                 return RedisError.CommandFailed;
             },
             else => {
-                std.log.scoped(.redis_client).err("[redis_client.ttl] Unexpected response type: '{c}' in: '{s}'", .{ response[0], response });
+                std.log.scoped(.redis).err("[RedisClient.ttl] Unexpected response type: '{c}' in: '{s}'", .{ response[0], response });
                 return RedisError.InvalidResponse;
             },
         }

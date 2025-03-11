@@ -218,75 +218,75 @@ pub const Security = struct {
     // }
 
     pub fn authenticate(self: *Security, request: *jetzig.Request, credentials: Credentials) !AuthenticationCredentials {
-        std.log.scoped(.auth).debug("[security.authenticate] Starting authentication", .{});
+        std.log.scoped(.auth).debug("[Security.authenticate] Starting authentication", .{});
 
         const client_ip = ip_utils.getClientIp(request);
-        std.log.scoped(.auth).debug("[security.authenticate] client_ip: '{s}'", .{client_ip});
+        std.log.scoped(.auth).debug("[Security.authenticate] client_ip: '{s}'", .{client_ip});
 
         // Validate request metadata
         if (request.headers.get("User-Agent")) |ua| {
-            std.log.scoped(.auth).debug("[security.authenticate] Validating User-Agent: '{s}'", .{ua});
+            std.log.scoped(.auth).debug("[Security.authenticate] Validating User-Agent: '{s}'", .{ua});
             if (!validation.isValidUserAgent(ua)) {
-                std.log.scoped(.auth).debug("[security.authenticate] Invalid User-Agent, returning ValidationError", .{});
+                std.log.scoped(.auth).debug("[Security.authenticate] Invalid User-Agent, returning ValidationError", .{});
                 return SecurityError.ValidationError;
             }
         } else {
-            std.log.scoped(.auth).debug("[security.authenticate] No User-Agent header present", .{});
+            std.log.scoped(.auth).debug("[Security.authenticate] No User-Agent header present", .{});
         }
 
         // 1. Rate limit check
-        std.log.scoped(.auth).debug("[security.authenticate] Checking rate limit for '{s}'", .{client_ip});
+        std.log.scoped(.auth).debug("[Security.authenticate] Checking rate limit for '{s}'", .{client_ip});
         const rate_limit_info = try self.rate_limiter.check(client_ip);
-        std.log.scoped(.auth).debug("[security.authenticate] Rate limit info - remaining: {d}, is_locked: {}", .{ rate_limit_info.remaining, rate_limit_info.is_locked });
+        std.log.scoped(.auth).debug("[Security.authenticate] Rate limit info - remaining: {d}, is_locked: {}", .{ rate_limit_info.remaining, rate_limit_info.is_locked });
 
         // Check if account is locked
         if (rate_limit_info.is_locked) {
-            std.log.scoped(.auth).debug("[security.authenticate] Account locked, returning AccountLocked", .{});
+            std.log.scoped(.auth).debug("[Security.authenticate] Account locked, returning AccountLocked", .{});
             return SecurityError.AccountLocked;
         }
 
         // Check if rate limit is exceeded
         if (rate_limit_info.remaining == 0) {
-            std.log.scoped(.auth).debug("[security.authenticate] Rate limit exceeded, returning RateLimitExceeded", .{});
+            std.log.scoped(.auth).debug("[Security.authenticate] Rate limit exceeded, returning RateLimitExceeded", .{});
             return SecurityError.RateLimitExceeded;
         }
 
         // 2. Basic auth validation
-        std.log.scoped(.auth).debug("[security.authenticate] Validating credentials", .{});
+        std.log.scoped(.auth).debug("[Security.authenticate] Validating credentials", .{});
         const auth_result = self.validateCredentials(request, credentials, client_ip) catch {
-            std.log.scoped(.auth).debug("[security.authenticate] Invalid credentials, incrementing rate limit", .{});
+            std.log.scoped(.auth).debug("[Security.authenticate] Invalid credentials, incrementing rate limit", .{});
             try self.rate_limiter.increment(client_ip);
             try self.audit.log(.login_failed, null, .{
                 .action_details = "Invalid credentials",
                 .ip_address = client_ip,
             });
-            std.log.scoped(.auth).debug("[security.authenticate] Returning InvalidCredentials", .{});
+            std.log.scoped(.auth).debug("[Security.authenticate] Returning InvalidCredentials", .{});
             return SecurityError.InvalidCredentials;
         };
-        std.log.scoped(.auth).debug("[security.authenticate] Credentials validated, user ID: {d}", .{auth_result.user.id});
+        std.log.scoped(.auth).debug("[Security.authenticate] Credentials validated, user ID: {d}", .{auth_result.user.id});
 
         // 3. Create session
-        std.log.scoped(.auth).debug("[security.authenticate] Creating session for user ID: {d}", .{auth_result.user.id});
+        std.log.scoped(.auth).debug("[Security.authenticate] Creating session for user ID: {d}", .{auth_result.user.id});
         const session = try self.session.create(auth_result.user, request);
-        std.log.scoped(.auth).debug("[security.authenticate] Session created", .{});
+        std.log.scoped(.auth).debug("[Security.authenticate] Session created", .{});
 
         // 4. Generate token
-        std.log.scoped(.auth).debug("[security.authenticate] Generating token", .{});
+        std.log.scoped(.auth).debug("[Security.authenticate] Generating token", .{});
         const token = try self.token.generate(session);
-        std.log.scoped(.auth).debug("[security.authenticate] token generated", .{});
+        std.log.scoped(.auth).debug("[Security.authenticate] token generated", .{});
 
         // 5. Log successful authentication
-        std.log.scoped(.auth).debug("[security.authenticate] Logging successful login", .{});
+        std.log.scoped(.auth).debug("[Security.authenticate] Logging successful login", .{});
         try self.audit.log(.login_success, auth_result.user.id, .{
             .action_details = "Successful login",
             .ip_address = client_ip,
         });
 
         // 6. Reset rate limit counter on success
-        std.log.scoped(.auth).debug("[security.authenticate] Resetting rate limit for '{s}'", .{client_ip});
+        std.log.scoped(.auth).debug("[Security.authenticate] Resetting rate limit for '{s}'", .{client_ip});
         try self.rate_limiter.reset(client_ip);
 
-        std.log.scoped(.auth).debug("[security.authenticate] Authentication successful", .{});
+        std.log.scoped(.auth).debug("[Security.authenticate] Authentication successful", .{});
         return AuthenticationCredentials{
             .session = session,
             .user = auth_result.user,
@@ -295,23 +295,23 @@ pub const Security = struct {
     }
 
     fn validateCredentials(self: *Security, request: *jetzig.Request, credentials: Credentials, client_ip: []const u8) !struct { user: User } {
-        std.log.scoped(.auth).debug("[security.validateCredentials] Starting credential validation", .{});
+        std.log.scoped(.auth).debug("[Security.validateCredentials] Starting credential validation", .{});
 
         // Validate input parameters first
         if (credentials.email.len == 0) {
-            std.log.scoped(.auth).debug("[security.validateCredentials] Empty email provided, returning InvalidInput", .{});
+            std.log.scoped(.auth).debug("[Security.validateCredentials] Empty email provided, returning InvalidInput", .{});
             return SecurityError.InvalidInput;
         }
 
         if (credentials.password.len == 0) {
-            std.log.scoped(.auth).debug("[security.validateCredentials] Empty password provided, returning InvalidInput", .{});
+            std.log.scoped(.auth).debug("[Security.validateCredentials] Empty password provided, returning InvalidInput", .{});
             return SecurityError.InvalidInput;
         }
 
-        std.log.scoped(.auth).debug("[security.validateCredentials] Input validation passed", .{});
+        std.log.scoped(.auth).debug("[Security.validateCredentials] Input validation passed", .{});
 
         // 1. Database Query using jetzig.database.Query and findBy
-        std.log.scoped(.auth).debug("[security.validateCredentials] Building database query for email: '{s}'", .{credentials.email});
+        std.log.scoped(.auth).debug("[Security.validateCredentials] Building database query for email: '{s}'", .{credentials.email});
         const query = jetzig.database.Query(.User)
             .include(.user_roles, .{
                 .include = .{.role},
@@ -319,7 +319,7 @@ pub const Security = struct {
             .findBy(.{ .email = credentials.email });
 
         // Create JSON for the custom data properly
-        std.log.scoped(.auth).debug("[security.validateCredentials] Creating audit log JSON data", .{});
+        std.log.scoped(.auth).debug("[Security.validateCredentials] Creating audit log JSON data", .{});
         const email_json = try std.fmt.allocPrint(
             self.allocator,
             \\{{ "email": "{s}" }}
@@ -329,7 +329,7 @@ pub const Security = struct {
         defer self.allocator.free(email_json);
 
         // Parse the JSON string into a json.Value
-        std.log.scoped(.auth).debug("[security.validateCredentials] Parsing JSON for audit log", .{});
+        std.log.scoped(.auth).debug("[Security.validateCredentials] Parsing JSON for audit log", .{});
         const custom_data = try std.json.parseFromSlice(
             std.json.Value,
             self.allocator,
@@ -338,7 +338,7 @@ pub const Security = struct {
         );
         defer custom_data.deinit();
 
-        std.log.scoped(.auth).debug("[security.validateCredentials] Logging credential check audit event", .{});
+        std.log.scoped(.auth).debug("[Security.validateCredentials] Logging credential check audit event", .{});
         try self.audit.log(.credential_check, null, .{
             .action_details = "Credentials verification attempt",
             .ip_address = client_ip,
@@ -346,31 +346,31 @@ pub const Security = struct {
         });
 
         // Execute query with proper error handling
-        std.log.scoped(.auth).debug("[security.validateCredentials] Executing database query", .{});
+        std.log.scoped(.auth).debug("[Security.validateCredentials] Executing database query", .{});
         const user = request.repo.execute(query) catch |err| {
-            std.log.scoped(.auth).debug("[security.validateCredentials] Database error during credential verification: {}", .{err});
+            std.log.scoped(.auth).debug("[Security.validateCredentials] Database error during credential verification: {}", .{err});
             return SecurityError.DatabaseError;
         } orelse {
             // Don't reveal if user exists or not to prevent enumeration attacks
-            std.log.scoped(.auth).debug("[security.validateCredentials] User not found: {s}", .{credentials.email});
+            std.log.scoped(.auth).debug("[Security.validateCredentials] User not found: {s}", .{credentials.email});
             return SecurityError.InvalidCredentials;
         };
 
-        std.log.scoped(.auth).debug("[security.validateCredentials] User found: id={d}, username={s}, email={s}", .{
+        std.log.scoped(.auth).debug("[Security.validateCredentials] User found: id={d}, username={s}, email={s}", .{
             user.id,
             user.username,
             user.email,
         });
 
         // 2. Account status verification
-        std.log.scoped(.auth).debug("[security.validateCredentials] Checking account status", .{});
+        std.log.scoped(.auth).debug("[Security.validateCredentials] Checking account status", .{});
         if (user.is_banned != null and user.is_banned.?) {
-            std.log.scoped(.auth).debug("[security.validateCredentials] Account is banned, returning AccountLocked", .{});
+            std.log.scoped(.auth).debug("[Security.validateCredentials] Account is banned, returning AccountLocked", .{});
             try self.audit.log(.access_denied, @intCast(user.id), .{
                 .action_details = "Login attempt on banned account",
                 .ip_address = client_ip,
                 .custom_data = if (user.ban_reason != null) blk: {
-                    std.log.scoped(.auth).debug("[security.validateCredentials] Including ban reason in audit log", .{});
+                    std.log.scoped(.auth).debug("[Security.validateCredentials] Including ban reason in audit log", .{});
                     const reason_json = try std.fmt.allocPrint(
                         self.allocator,
                         \\{{ "ban_reason": "{s}" }}
@@ -391,7 +391,7 @@ pub const Security = struct {
         }
 
         if (user.is_active != null and !user.is_active.?) {
-            std.log.scoped(.auth).debug("[security.validateCredentials] Account is inactive, returning AccountInactive", .{});
+            std.log.scoped(.auth).debug("[Security.validateCredentials] Account is inactive, returning AccountInactive", .{});
             try self.audit.log(.access_denied, @intCast(user.id), .{
                 .action_details = "Login attempt on inactive account",
                 .ip_address = client_ip,
@@ -400,38 +400,38 @@ pub const Security = struct {
         }
 
         // 3. Password Hash Verification
-        std.log.scoped(.auth).debug("[security.validateCredentials] Verifying password hash", .{});
+        std.log.scoped(.auth).debug("[Security.validateCredentials] Verifying password hash", .{});
         const is_password_valid = jetzig.auth.verifyPassword(self.allocator, user.password_hash, credentials.password) catch |err| {
-            std.log.scoped(.auth).debug("[security.validateCredentials] Password verification error: {}", .{err});
+            std.log.scoped(.auth).debug("[Security.validateCredentials] Password verification error: {}", .{err});
             return SecurityError.InternalError;
         };
 
         if (!is_password_valid) {
-            std.log.scoped(.auth).debug("[security.validateCredentials] Password verification failed, returning InvalidCredentials", .{});
+            std.log.scoped(.auth).debug("[Security.validateCredentials] Password verification failed, returning InvalidCredentials", .{});
             try self.audit.log(.login_failed, @intCast(user.id), .{
                 .action_details = "Invalid password",
                 .ip_address = client_ip,
             });
             return SecurityError.InvalidCredentials;
         }
-        std.log.scoped(.auth).debug("[security.validateCredentials] Password verification successful", .{});
+        std.log.scoped(.auth).debug("[Security.validateCredentials] Password verification successful", .{});
 
         // 4. User last login info
-        std.log.scoped(.auth).debug("[security.validateCredentials] Getting user agent information", .{});
+        std.log.scoped(.auth).debug("[Security.validateCredentials] Getting user agent information", .{});
         const user_agent = request.headers.get("User-Agent") orelse "";
-        std.log.scoped(.auth).debug("[security.validateCredentials] User agent: '{s}'", .{user_agent});
+        std.log.scoped(.auth).debug("[Security.validateCredentials] User agent: '{s}'", .{user_agent});
 
         // 5. Create and Return User struct with updated information
-        std.log.scoped(.auth).debug("[security.validateCredentials] Creating user record with updated login information", .{});
+        std.log.scoped(.auth).debug("[Security.validateCredentials] Creating user record with updated login information", .{});
 
         const device_id = request.headers.get("X-Device-ID");
         if (device_id) |id| {
-            std.log.scoped(.auth).debug("[security.validateCredentials] Device ID provided: '{s}'", .{id});
+            std.log.scoped(.auth).debug("[Security.validateCredentials] Device ID provided: '{s}'", .{id});
         } else {
-            std.log.scoped(.auth).debug("[security.validateCredentials] No device ID provided", .{});
+            std.log.scoped(.auth).debug("[Security.validateCredentials] No device ID provided", .{});
         }
 
-        std.log.scoped(.auth).debug("[security.validateCredentials] Validation successful for user ID: {d}", .{user.id});
+        std.log.scoped(.auth).debug("[Security.validateCredentials] Validation successful for user ID: {d}", .{user.id});
         return .{
             .user = User{
                 .id = @intCast(user.id),
@@ -449,13 +449,13 @@ pub const Security = struct {
 
     pub fn validateSession(self: *Security, request: *jetzig.Request) !Session {
         // Get the session token from the cookie
-        std.log.scoped(.auth).debug("[security.validateSession] calling getSessionTokenFromCookie: ", .{});
+        std.log.scoped(.auth).debug("[Security.validateSession] calling getSessionTokenFromCookie: ", .{});
         const token = (try self.session.getSessionTokenFromCookie(request)) orelse
             return SecurityError.UnauthorizedAccess;
 
         //const token = self.getAuthToken(request) orelse return SecurityError.UnauthorizedAccess;
 
-        std.log.scoped(.auth).debug("[security.validateSession] calling session.validate: ", .{});
+        std.log.scoped(.auth).debug("[Security.validateSession] calling session.validate: ", .{});
         const session = try self.session.validate(token, request);
 
         // Validate IP and User-Agent binding
@@ -468,28 +468,28 @@ pub const Security = struct {
     }
 
     pub fn logout(self: *Security, request: *jetzig.Request) !void {
-        std.log.scoped(.security).debug("[security.logout] Starting logout process", .{});
+        std.log.scoped(.security).debug("[Security.logout] Starting logout process", .{});
 
         if (try self.session.getSessionTokenFromCookie(request)) |token| {
-            std.log.scoped(.security).debug("[security.logout] Found session token: {s}", .{token});
+            std.log.scoped(.security).debug("[Security.logout] Found session token: {s}", .{token});
 
-            std.log.scoped(.security).debug("[security.logout] Cleaning up session", .{});
+            std.log.scoped(.security).debug("[Security.logout] Cleaning up session", .{});
             try self.session.cleanup(request);
 
-            std.log.scoped(.security).debug("[security.logout] Invalidating token", .{});
+            std.log.scoped(.security).debug("[Security.logout] Invalidating token", .{});
             try self.token.invalidateToken(token);
 
             const ip = ip_utils.getClientIp(request);
-            std.log.scoped(.security).debug("[security.logout] Logging audit event from IP: {s}", .{ip});
+            std.log.scoped(.security).debug("[Security.logout] Logging audit event from IP: {s}", .{ip});
 
             try self.audit.log(.logout, null, .{
                 .action_details = "User logout",
                 .ip_address = ip,
             });
 
-            std.log.scoped(.security).debug("[security.logout] Logout process completed successfully", .{});
+            std.log.scoped(.security).debug("[Security.logout] Logout process completed successfully", .{});
         } else {
-            std.log.scoped(.security).debug("[security.logout] No session token found in cookie", .{});
+            std.log.scoped(.security).debug("[Security.logout] No session token found in cookie", .{});
         }
     }
 
