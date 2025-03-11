@@ -69,7 +69,6 @@ pub const PooledRedisClient = struct {
     }
 
     pub fn acquire(self: *Self) !*RedisClient {
-        // Perform a potential cleanup operation based on time intervals
         try self.maybeCleanupConnections();
 
         self.mutex.lock();
@@ -105,6 +104,8 @@ pub const PooledRedisClient = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
+        if (!self.containsClient(client) or !client.connected) return;
+
         client.reconnect_attempts = 0;
         client.last_used_timestamp = std.time.milliTimestamp();
 
@@ -116,7 +117,9 @@ pub const PooledRedisClient = struct {
         }
 
         if (self.available.items.len < self.config.max_connections) {
-            self.available.append(client) catch {
+            self.available.append(client) catch |err| {
+                // Handle append failure (e.g., out of memory)
+                std.log.err("Failed to append client to available pool: {}", .{err});
                 client.disconnect();
                 self.allocator.destroy(client);
                 _ = self.removeFromAllClients(client);
@@ -129,25 +132,21 @@ pub const PooledRedisClient = struct {
         }
     }
 
+    fn containsClient(self: *Self, client: *RedisClient) bool {
+        for (self.all_clients.items) |c| if (c == client) return true;
+        return false;
+    }
+
     fn maybeCleanupConnections(self: *Self) !void {
-        // Simple safety check before accessing config fields
         const now = std.time.milliTimestamp();
-        const cleanup_interval = @as(i64, 30000); // Default 30 second interval as fallback
+        const cleanup_interval = @as(i64, 30000); // 30 seconds default
 
-        var should_cleanup = false;
-
-        // Try to safely access config, but provide a fallback
         const interval = if (@hasField(@TypeOf(self.config), "cleanup_interval_ms"))
             self.config.cleanup_interval_ms
         else
             cleanup_interval;
 
-        // Only clean up if interval > 0 and enough time has passed
         if (interval > 0 and now - self.last_cleanup >= interval) {
-            should_cleanup = true;
-        }
-
-        if (should_cleanup) {
             try self.cleanupConnections();
         }
     }
@@ -156,38 +155,25 @@ pub const PooledRedisClient = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        // Mark the cleanup time first to prevent concurrent cleanups
         self.last_cleanup = std.time.milliTimestamp();
 
-        // Safety check for empty list
-        if (self.available.items.len == 0) {
-            return;
-        }
+        if (self.available.items.len == 0) return;
 
-        // Use a reverse loop for safe removal
         var i: usize = self.available.items.len;
         while (i > 0) {
             i -= 1;
-            if (i >= self.available.items.len) continue; // Extra safety check
+            if (i >= self.available.items.len) continue;
 
             const client = self.available.items[i];
             if (!client.isHealthy()) {
-                // Remove from available list safely
                 const removed = self.available.orderedRemove(i);
-
-                // Clean up the client
                 removed.disconnect();
-
-                // Remove from all_clients list
                 _ = self.removeFromAllClients(removed);
-
-                // Free the memory
                 self.allocator.destroy(removed);
             }
         }
     }
 
-    // Safely remove a client from the all_clients list
     fn removeFromAllClients(self: *Self, client: *RedisClient) bool {
         for (self.all_clients.items, 0..) |item, i| {
             if (item == client) {

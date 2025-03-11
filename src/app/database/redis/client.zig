@@ -2,12 +2,13 @@ const std = @import("std");
 
 const types = @import("types.zig");
 pub const pool = @import("pool.zig");
+pub const buffer_pool = @import("buffer_pool.zig");
 
 pub const RedisError = types.RedisError;
 pub const ResponseType = types.ResponseType;
 pub const RedisClientConfig = types.RedisClientConfig;
 pub const ScanResult = types.ScanResult;
-pub const BufferPool = pool.BufferPool;
+pub const BufferPool = buffer_pool.BufferPool;
 
 pub const RedisClient = struct {
     allocator: std.mem.Allocator,
@@ -46,6 +47,12 @@ pub const RedisClient = struct {
 
     /// Establishes a new connection to Redis
     pub fn connect(allocator: std.mem.Allocator, config: RedisClientConfig) RedisError!Self {
+        buffer_pool.initGlobalPool(allocator, 16, 4096) catch |err| switch (err) {
+            error.AlreadyInitialized => {}, // Ignore if already initialized
+            error.OutOfMemory => return RedisError.OutOfMemory, // Map to RedisError
+            //else => return RedisError.ConnectionFailed, // Fallback for unexpected errors
+        };
+
         const socket = std.net.tcpConnectToHost(allocator, config.host, config.port) catch |err| {
             return switch (err) {
                 error.ConnectionRefused => RedisError.ConnectionRefused,
@@ -111,14 +118,17 @@ pub const RedisClient = struct {
     /// Authenticates with the Redis server
     pub fn auth(self: *Self, password: []const u8) RedisError!void {
         const cmd = self.formatCommand("*2\r\n$4\r\nAUTH\r\n${d}\r\n{s}\r\n", .{ password.len, password }) catch |err| switch (err) {
-            error.OutOfMemory => return RedisError.OutOfMemory,
+            error.OutOfMemory => return RedisError.OutOfMemory, // Explicitly handle OOM
+            else => return RedisError.AuthenticationFailed, // Map all other errors to a sensible default
         };
         defer self.allocator.free(cmd);
 
         const response = try self.executeCommand(cmd);
         defer self.allocator.free(response);
 
-        if (!std.mem.eql(u8, response, "+OK\r\n")) return RedisError.AuthenticationFailed;
+        if (response.len == 0 or response[0] != '+') {
+            return RedisError.AuthenticationFailed;
+        }
     }
 
     /// Selects a Redis database
@@ -131,7 +141,19 @@ pub const RedisClient = struct {
     }
 
     fn formatCommand(self: *Self, comptime fmt: []const u8, args: anytype) ![]u8 {
-        return std.fmt.allocPrint(self.allocator, fmt, args);
+        if (buffer_pool.getGlobalPool()) |bpool| {
+            const buf = try bpool.acquire();
+            errdefer bpool.release(buf);
+            const result = std.fmt.bufPrint(buf, fmt, args) catch {
+                bpool.release(buf);
+                return RedisError.OutOfMemory;
+            };
+            const owned = try self.allocator.dupe(u8, result);
+            bpool.release(buf);
+            return owned;
+        } else {
+            return std.fmt.allocPrint(self.allocator, fmt, args) catch return RedisError.OutOfMemory;
+        }
     }
 
     fn executeCommand(self: *Self, cmd: []const u8) RedisError![]const u8 {
@@ -145,35 +167,21 @@ pub const RedisClient = struct {
             const elapsed = std.time.milliTimestamp() - start_time;
             if (elapsed > self.config.read_timeout_ms) return RedisError.Timeout;
 
-            std.log.scoped(.redis_client).debug("[redis_client.executeCommand] Sending: '{s}'", .{cmd});
-            self.sendCommand(cmd) catch |err| switch (err) {
-                error.DisconnectedClient => return RedisError.DisconnectedClient,
-                error.NetworkError => {
-                    try self.reconnect();
-                    continue;
-                },
-                error.WouldBlock => return RedisError.WouldBlock,
-                error.SystemResources => return RedisError.SystemResources,
-                else => return RedisError.NetworkError,
-            };
+            try self.sendCommand(cmd);
+            var buffer = std.ArrayList(u8).initCapacity(self.allocator, 1024) catch return RedisError.OutOfMemory; // Pre-allocate 1KB
+            errdefer buffer.deinit();
 
-            const response = self.readResponse() catch |read_err| {
-                self.connected = false;
-                return read_err;
-            };
-            std.log.scoped(.redis_client).debug("[redis_client.executeCommand] Received: '{s}'", .{response});
+            const response_type = try self.readResponseType(&buffer, self.socket.reader());
+            try self.parseResponse(&buffer, self.socket.reader(), response_type);
 
-            // Check if response matches command type
+            const response = try buffer.toOwnedSlice();
             if (cmd.len >= 7 and std.mem.startsWith(u8, cmd, "*2\r\n$3\r\nTTL\r\n") and response.len > 0 and response[0] != ':') {
-                std.log.scoped(.redis_client).warn("[redis_client.executeCommand] Unexpected response type for TTL, retrying", .{});
-                try self.reconnect(); // Reset connection to clear any misalignment
+                self.allocator.free(response);
+                try self.reconnect();
                 continue;
             }
-
             return response;
         }
-
-        self.connected = false;
         return RedisError.CommandFailed;
     }
 
