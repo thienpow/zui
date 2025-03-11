@@ -3,7 +3,7 @@ const jetzig = @import("jetzig");
 
 pub fn set_cookie(request: *jetzig.Request, name: []const u8, value: []const u8) !void {
     var cookies = try request.cookies();
-    std.log.scoped(.utils).debug("Utils.Cookie.set_cookie, cookie_domain: {s}", .{request.global.config_manager.security_config.session.cookie_domain});
+    std.log.scoped(.utils).debug("[Utils.Cookie.set_cookie], cookie_domain: {s}", .{request.global.config_manager.security_config.session.cookie_domain});
     try cookies.put(.{
         .name = name,
         .value = value,
