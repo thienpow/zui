@@ -519,10 +519,12 @@ pub const RedisClient = struct {
 
     /// Scans keys matching a pattern
     pub fn scan(self: *Self, cursor: []const u8, match_pattern: ?[]const u8, count: ?u32) !ScanResult {
-        var cmd_builder = std.ArrayList(u8).init(self.allocator);
+        var cmd_buffer = if (buffer_pool.getGlobalPool()) |bpool| try bpool.acquire() else try self.allocator.alloc(u8, 1024);
+        defer if (buffer_pool.getGlobalPool()) |bpool| bpool.release(cmd_buffer) else self.allocator.free(cmd_buffer);
+
+        var cmd_builder = std.ArrayList(u8).initBuffer(cmd_buffer[0..0]);
         defer cmd_builder.deinit();
 
-        // Build the SCAN command
         try std.fmt.format(cmd_builder.writer(), "*{d}\r\n$4\r\nSCAN\r\n${d}\r\n{s}\r\n", .{
             2 + @as(usize, if (match_pattern != null) 2 else 0) + @as(usize, if (count != null) 2 else 0),
             cursor.len,
@@ -537,66 +539,78 @@ pub const RedisClient = struct {
         }
 
         if (count) |c| {
-            const count_str = try std.fmt.allocPrint(self.allocator, "{d}", .{c});
-            defer self.allocator.free(count_str);
-            try std.fmt.format(cmd_builder.writer(), "$5\r\nCOUNT\r\n${d}\r\n{s}\r\n", .{
-                count_str.len,
-                count_str,
+            try std.fmt.format(cmd_builder.writer(), "$5\r\nCOUNT\r\n${d}\r\n{d}\r\n", .{
+                std.fmt.count("{d}", .{c}),
+                c,
             });
         }
 
-        const cmd = try cmd_builder.toOwnedSlice();
-        defer self.allocator.free(cmd);
+        var retries: u8 = 0;
+        const max_retries: u8 = 3;
 
-        const response = try self.executeCommand(cmd);
-        defer self.allocator.free(response);
+        while (retries < max_retries) : (retries += 1) {
+            const cmd = try cmd_builder.toOwnedSlice();
+            defer self.allocator.free(cmd);
 
-        // Parse the response
-        if (response[0] != '*') return RedisError.InvalidResponse;
+            const response = self.executeCommand(cmd) catch |err| switch (err) {
+                error.WouldBlock, error.Timeout => {
+                    std.time.sleep(std.time.ns_per_s * retries);
+                    continue;
+                },
+                else => return err,
+            };
+            defer self.allocator.free(response);
 
-        const array_size_end = std.mem.indexOf(u8, response[1..], "\r\n") orelse return RedisError.InvalidResponse;
-        const array_size = try std.fmt.parseInt(usize, response[1 .. 1 + array_size_end], 10);
-        if (array_size != 2) return RedisError.InvalidResponse;
+            if (response.len < 5 or response[0] != '*') return RedisError.InvalidResponse;
 
-        var pos = 1 + array_size_end + 2;
+            const array_size_end = std.mem.indexOf(u8, response[1..], "\r\n") orelse return RedisError.InvalidResponse;
+            if (1 + array_size_end >= response.len) return RedisError.InvalidResponse;
+            const array_size = try std.fmt.parseInt(usize, response[1 .. 1 + array_size_end], 10);
+            if (array_size != 2) return RedisError.InvalidResponse;
 
-        // Parse the cursor
-        if (response[pos] != '$') return RedisError.InvalidResponse;
-        const cursor_len_end = std.mem.indexOf(u8, response[pos + 1 ..], "\r\n") orelse return RedisError.InvalidResponse;
-        const cursor_len = try std.fmt.parseInt(usize, response[pos + 1 .. pos + 1 + cursor_len_end], 10);
-        pos += 1 + cursor_len_end + 2;
+            var pos = 1 + array_size_end + 2;
+            if (pos >= response.len or response[pos] != '$') return RedisError.InvalidResponse;
 
-        const new_cursor = try self.allocator.dupe(u8, response[pos .. pos + cursor_len]);
-        errdefer self.allocator.free(new_cursor);
-        pos += cursor_len + 2;
+            const cursor_len_end = std.mem.indexOf(u8, response[pos + 1 ..], "\r\n") orelse return RedisError.InvalidResponse;
+            if (pos + 1 + cursor_len_end >= response.len) return RedisError.InvalidResponse;
+            const cursor_len = try std.fmt.parseInt(usize, response[pos + 1 .. pos + 1 + cursor_len_end], 10);
+            if (pos + 1 + cursor_len_end + 2 + cursor_len > response.len) return RedisError.InvalidResponse;
 
-        // Parse the keys
-        if (response[pos] != '*') return RedisError.InvalidResponse;
-        const keys_count_end = std.mem.indexOf(u8, response[pos + 1 ..], "\r\n") orelse return RedisError.InvalidResponse;
-        const keys_count = try std.fmt.parseInt(usize, response[pos + 1 .. pos + 1 + keys_count_end], 10);
-        pos += 1 + keys_count_end + 2;
+            const new_cursor = try self.allocator.dupe(u8, response[pos + 1 + cursor_len_end + 2 .. pos + 1 + cursor_len_end + 2 + cursor_len]);
+            errdefer self.allocator.free(new_cursor);
+            pos += 1 + cursor_len_end + 2 + cursor_len;
 
-        var keys = std.ArrayList([]const u8).init(self.allocator);
-        errdefer {
-            for (keys.items) |key| self.allocator.free(key);
-            keys.deinit();
+            if (pos >= response.len or response[pos] != '*') return RedisError.InvalidResponse;
+            const keys_count_end = std.mem.indexOf(u8, response[pos + 1 ..], "\r\n") orelse return RedisError.InvalidResponse;
+            if (pos + 1 + keys_count_end >= response.len) return RedisError.InvalidResponse;
+            const keys_count = try std.fmt.parseInt(usize, response[pos + 1 .. pos + 1 + keys_count_end], 10);
+            pos += 1 + keys_count_end + 2;
+
+            var keys = std.ArrayList([]const u8).init(self.allocator);
+            errdefer {
+                for (keys.items) |key| self.allocator.free(key);
+                keys.deinit();
+            }
+
+            var i: usize = 0;
+            while (i < keys_count and pos < response.len) : (i += 1) {
+                if (pos >= response.len or response[pos] != '$') return RedisError.InvalidResponse;
+                const key_len_end = std.mem.indexOf(u8, response[pos + 1 ..], "\r\n") orelse return RedisError.InvalidResponse;
+                if (pos + 1 + key_len_end >= response.len) return RedisError.InvalidResponse;
+                const key_len = try std.fmt.parseInt(usize, response[pos + 1 .. pos + 1 + key_len_end], 10);
+                if (pos + 1 + key_len_end + 2 + key_len > response.len) return RedisError.InvalidResponse;
+                const key = try self.allocator.dupe(u8, response[pos + 1 + key_len_end + 2 .. pos + 1 + key_len_end + 2 + key_len]);
+                try keys.append(key);
+                pos += 1 + key_len_end + 2 + key_len;
+            }
+            if (i != keys_count) return RedisError.InvalidResponse;
+
+            return ScanResult{
+                .cursor = new_cursor,
+                .keys = try keys.toOwnedSlice(),
+            };
         }
-
-        var i: usize = 0;
-        while (i < keys_count and pos < response.len) : (i += 1) {
-            if (response[pos] != '$') break;
-            const key_len_end = std.mem.indexOf(u8, response[pos + 1 ..], "\r\n") orelse break;
-            const key_len = try std.fmt.parseInt(usize, response[pos + 1 .. pos + 1 + key_len_end], 10);
-            pos += 1 + key_len_end + 2;
-            const key = try self.allocator.dupe(u8, response[pos .. pos + key_len]);
-            try keys.append(key);
-            pos += key_len + 2;
-        }
-
-        return ScanResult{
-            .cursor = new_cursor,
-            .keys = try keys.toOwnedSlice(),
-        };
+        return RedisError.CommandFailed;
     }
 
     /// Scans all keys matching a pattern
