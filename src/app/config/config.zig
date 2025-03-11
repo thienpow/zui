@@ -411,13 +411,13 @@ pub const ConfigManager = struct {
                     std.log.scoped(.config).debug("[ConfigManager.load] Set max sessions per user: {d}", .{self.security_config.session.max_sessions_per_user});
                 }
 
-                if (security_json.object.get("cookie_name")) |cookie_name_json| {
+                if (session_json.object.get("cookie_name")) |cookie_name_json| {
                     self.security_config.session.cookie_name =
                         try self.allocator.dupe(u8, cookie_name_json.string);
                     std.log.scoped(.config).debug("[ConfigManager.load] Set session cookie name: {s}", .{self.security_config.session.cookie_name});
                 }
 
-                if (security_json.object.get("cookie_domain")) |cookie_domain_json| {
+                if (session_json.object.get("cookie_domain")) |cookie_domain_json| {
                     self.security_config.session.cookie_domain =
                         try self.allocator.dupe(u8, cookie_domain_json.string);
                     std.log.scoped(.config).debug("[ConfigManager.load] Set session cookie domain: {s}", .{self.security_config.session.cookie_domain});
