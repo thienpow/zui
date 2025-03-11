@@ -28,6 +28,7 @@ pub const SecurityConfig = struct {
 
 pub const SessionConfig = struct {
     cookie_name: []const u8 = "session_token",
+    cookie_domain: []const u8 = "127.0.0.1",
     session_ttl: i64 = 24 * 60 * 60, // 24 hours in seconds
     max_sessions_per_user: u32 = 5,
     refresh_threshold: i64 = 60 * 60, // 1 hour in seconds

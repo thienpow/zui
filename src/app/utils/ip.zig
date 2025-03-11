@@ -1,6 +1,5 @@
 const std = @import("std");
 const jetzig = @import("jetzig");
-const builtin = @import("builtin");
 
 /// Gets the client IP address from a request with proper header handling
 /// and fallbacks. This centralizes IP extraction logic for the application.
@@ -25,7 +24,7 @@ pub fn getClientIp(request: *jetzig.Request) []const u8 {
     }
 
     // Local development fallback
-    if (builtin.mode == .Debug) {
+    if (jetzig.environment == .development) {
         return "127.0.0.1"; // Local dev fallback
     }
 

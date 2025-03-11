@@ -1,5 +1,4 @@
 const std = @import("std");
-const builtin = @import("builtin");
 
 const jetzig = @import("jetzig");
 const http = std.http;
@@ -8,6 +7,8 @@ const http_utils = @import("../utils/http.zig");
 const config = @import("config.zig");
 const types = @import("types.zig");
 const ip_utils = @import("../utils/ip.zig");
+const cookie_utils = @import("../utils/cookie.zig");
+
 const Security = @import("security.zig").Security;
 const AuthResult = @import("types.zig").AuthResult;
 const User = @import("types.zig").User;
@@ -452,16 +453,7 @@ pub const OAuthManager = struct {
         const state = try self.generateState();
 
         // Store state in a cookie
-        const cookies = try request.cookies();
-        try cookies.put(.{
-            .name = self.config.state_cookie_name,
-            .value = state,
-            .path = "/",
-            .http_only = if (builtin.mode == .Debug) false else true,
-            .secure = if (builtin.mode == .Debug) false else true,
-            .same_site = if (builtin.mode == .Debug) .lax else .strict,
-            .max_age = self.config.state_cookie_max_age,
-        });
+        try cookie_utils.set_cookie(request, self.config.state_cookie_name, state);
 
         return try provider.getAuthorizationUrl(state);
     }

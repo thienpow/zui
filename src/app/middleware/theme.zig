@@ -1,6 +1,6 @@
 const std = @import("std");
-const builtin = @import("builtin");
 const jetzig = @import("jetzig");
+const cookie_utils = @import("../utils/cookie.zig");
 
 const theme = @This();
 
@@ -19,8 +19,7 @@ pub fn afterRequest(_: *theme, request: *jetzig.http.Request) !void {
     var data = try request.data(.object);
 
     // Apply theme logic
-    const cookies = try request.cookies();
-    const dark = getDarkModeSetting(cookies);
+    const dark = getDarkModeSetting(request);
     try data.put("dark", dark);
 }
 
@@ -30,20 +29,14 @@ pub fn afterResponse(self: *theme, request: *jetzig.http.Request, response: *jet
     _ = response;
 }
 
-fn getDarkModeSetting(cookies: *jetzig.http.Cookies) ![]const u8 {
+fn getDarkModeSetting(request: *jetzig.http.Request) ![]const u8 {
     const dark = blk: {
+        const cookies = try request.cookies();
         if (cookies.get("dark")) |cookie| {
             break :blk cookie.value;
         } else {
-            try cookies.put(.{
-                .name = "dark",
-                .value = "",
-                .path = "/",
-                .http_only = if (builtin.mode == .Debug) false else true,
-                .secure = if (builtin.mode == .Debug) false else true,
-                .same_site = if (builtin.mode == .Debug) .lax else .strict,
-                .max_age = 60 * 60 * 24 * 90, // 90 days in seconds
-            });
+            try cookie_utils.set_cookie(request, "dark", "");
+
             break :blk "";
         }
     };

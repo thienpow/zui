@@ -1,11 +1,12 @@
 const std = @import("std");
-const builtin = @import("builtin");
 
 const crypto = std.crypto;
 const jetzig = @import("jetzig");
 const types = @import("types.zig");
 const config = @import("config.zig");
 const redis = @import("../database/redis/redis.zig");
+const cookie_utils = @import("../utils/cookie.zig");
+
 const SessionStorage = @import("storage.zig").SessionStorage;
 const PooledRedisClient = redis.PooledRedisClient;
 
@@ -129,33 +130,12 @@ pub const SessionManager = struct {
     // --- Cookie Management Functions ---
 
     pub fn setSessionCookie(self: *SessionManager, request: *jetzig.Request, token: []const u8) !void {
-        std.log.scoped(.auth).debug("[SessionManager.setSessionCookie] Starting cookie set for token: '{s}'", .{token});
-        const cookies = try request.cookies();
-        std.log.scoped(.auth).debug("[SessionManager.setSessionCookie] Cookies object retrieved", .{});
-
-        try cookies.put(.{
-            .name = self.config.cookie_name,
-            .value = token,
-            .path = "/",
-            .http_only = if (builtin.mode == .Debug) false else true,
-            .secure = if (builtin.mode == .Debug) false else true,
-            .same_site = if (builtin.mode == .Debug) .lax else .strict,
-            .max_age = self.config.session_ttl,
-        });
+        try cookie_utils.set_cookie(request, self.config.cookie_name, token);
         std.log.scoped(.auth).debug("[SessionManager.setSessionCookie] Cookie 'session_token' set with value: '{s}', max_age: {}", .{ token, self.config.session_ttl });
     }
 
     pub fn clearSessionCookie(self: *SessionManager, request: *jetzig.Request) !void {
-        const cookies = try request.cookies();
-        try cookies.put(.{
-            .name = self.config.cookie_name,
-            .value = "",
-            .path = "/",
-            .http_only = if (builtin.mode == .Debug) false else true,
-            .secure = if (builtin.mode == .Debug) false else true,
-            .same_site = if (builtin.mode == .Debug) .lax else .strict,
-            .max_age = 0,
-        });
+        try cookie_utils.set_cookie(request, self.config.cookie_name, "");
     }
 
     pub fn getSessionTokenFromCookie(self: *SessionManager, request: *jetzig.Request) !?[]const u8 {

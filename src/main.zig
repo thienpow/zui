@@ -53,11 +53,7 @@ pub const jetzig_options = struct {
     pub const Schema = @import("Schema");
 
     pub const cookies: jetzig.http.Cookies.CookieOptions = .{
-        .domain = switch (jetzig.environment) {
-            .development => "127.0.0.1",
-            .testing => "127.0.0.1",
-            .production => "zui.kavod.app",
-        },
+        .domain = "127.0.0.1",
         .path = "/",
     };
 

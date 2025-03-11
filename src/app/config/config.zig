@@ -48,6 +48,7 @@ pub const ConfigManager = struct {
             .session = .{
                 .max_sessions_per_user = 5,
                 .cookie_name = "session_token",
+                .cookie_domain = "127.0.0.1",
                 .session_ttl = 24 * 60 * 60, // 24 hours in seconds
                 .refresh_threshold = 60 * 60, // 1 hour in seconds
                 .cleanup_interval = 60 * 60, // 1 hour in seconds
@@ -227,6 +228,7 @@ pub const ConfigManager = struct {
         }
 
         self.allocator.free(self.security_config.session.cookie_name);
+        self.allocator.free(self.security_config.session.cookie_domain);
         self.allocator.free(self.security_config.oauth.state_cookie_name);
         self.allocator.free(self.security_config.oauth.default_redirect);
 
@@ -413,6 +415,12 @@ pub const ConfigManager = struct {
                     self.security_config.session.cookie_name =
                         try self.allocator.dupe(u8, cookie_name_json.string);
                     std.log.scoped(.config).debug("[ConfigManager.load] Set session cookie name: {s}", .{self.security_config.session.cookie_name});
+                }
+
+                if (security_json.object.get("cookie_domain")) |cookie_domain_json| {
+                    self.security_config.session.cookie_domain =
+                        try self.allocator.dupe(u8, cookie_domain_json.string);
+                    std.log.scoped(.config).debug("[ConfigManager.load] Set session cookie domain: {s}", .{self.security_config.session.cookie_domain});
                 }
 
                 if (session_json.object.get("session_ttl")) |session_ttl_json| {

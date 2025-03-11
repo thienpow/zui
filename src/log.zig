@@ -26,7 +26,8 @@ pub fn log(
     if (level == .debug) {
         if (scope == .redis or
             scope == .config or
-            //scope == .auth or
+            scope == .auth or
+            //scope == .utils or
             scope == .other)
         {
             return;

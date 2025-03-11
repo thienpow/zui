@@ -1,6 +1,5 @@
 const std = @import("std");
 const jetzig = @import("jetzig");
-const builtin = @import("builtin");
 
 const ip_utils = @import("../utils/ip.zig");
 
