@@ -1,4 +1,6 @@
 const std = @import("std");
+const builtin = @import("builtin");
+
 const jetzig = @import("jetzig");
 
 pub fn post(request: *jetzig.Request) !jetzig.View {
@@ -12,9 +14,9 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
             .name = "dark",
             .value = "",
             .path = "/",
-            .http_only = true,
-            .same_site = .strict, // Values: .strict, .lax, or .none
-            .secure = true,
+            .http_only = if (builtin.mode == .Debug) false else true,
+            .secure = if (builtin.mode == .Debug) false else true,
+            .same_site = if (builtin.mode == .Debug) .lax else .strict,
             .max_age = 60 * 60 * 24 * 90, // 90 days in seconds
         });
 
@@ -28,9 +30,9 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
         .name = "dark",
         .value = params.dark,
         .path = "/",
-        .http_only = true,
-        .same_site = .strict, // Values: .strict, .lax, or .none
-        .secure = true,
+        .http_only = if (builtin.mode == .Debug) false else true,
+        .secure = if (builtin.mode == .Debug) false else true,
+        .same_site = if (builtin.mode == .Debug) .lax else .strict,
         .max_age = 60 * 60 * 24 * 90, // 90 days in seconds
     });
 

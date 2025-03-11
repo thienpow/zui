@@ -54,8 +54,8 @@ pub const jetzig_options = struct {
 
     pub const cookies: jetzig.http.Cookies.CookieOptions = .{
         .domain = switch (jetzig.environment) {
-            .development => "localhost",
-            .testing => "localhost",
+            .development => "127.0.0.1",
+            .testing => "127.0.0.1",
             .production => "zui.kavod.app",
         },
         .path = "/",

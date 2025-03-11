@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const jetzig = @import("jetzig");
 
 const theme = @This();
@@ -38,9 +39,9 @@ fn getDarkModeSetting(cookies: *jetzig.http.Cookies) ![]const u8 {
                 .name = "dark",
                 .value = "",
                 .path = "/",
-                .http_only = true,
-                .same_site = .strict,
-                .secure = true,
+                .http_only = if (builtin.mode == .Debug) false else true,
+                .secure = if (builtin.mode == .Debug) false else true,
+                .same_site = if (builtin.mode == .Debug) .lax else .strict,
                 .max_age = 60 * 60 * 24 * 90, // 90 days in seconds
             });
             break :blk "";

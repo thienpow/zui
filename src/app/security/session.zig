@@ -1,4 +1,6 @@
 const std = @import("std");
+const builtin = @import("builtin");
+
 const crypto = std.crypto;
 const jetzig = @import("jetzig");
 const types = @import("types.zig");
@@ -135,9 +137,9 @@ pub const SessionManager = struct {
             .name = self.config.cookie_name,
             .value = token,
             .path = "/",
-            .http_only = true,
-            .secure = true,
-            .same_site = .strict,
+            .http_only = if (builtin.mode == .Debug) false else true,
+            .secure = if (builtin.mode == .Debug) false else true,
+            .same_site = if (builtin.mode == .Debug) .lax else .strict,
             .max_age = self.config.session_ttl,
         });
         std.log.scoped(.auth).debug("[SessionManager.setSessionCookie] Cookie 'session_token' set with value: '{s}', max_age: {}", .{ token, self.config.session_ttl });
@@ -149,9 +151,9 @@ pub const SessionManager = struct {
             .name = self.config.cookie_name,
             .value = "",
             .path = "/",
-            .http_only = true,
-            .secure = true,
-            .same_site = .strict,
+            .http_only = if (builtin.mode == .Debug) false else true,
+            .secure = if (builtin.mode == .Debug) false else true,
+            .same_site = if (builtin.mode == .Debug) .lax else .strict,
             .max_age = 0,
         });
     }

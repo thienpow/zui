@@ -1,4 +1,6 @@
 const std = @import("std");
+const builtin = @import("builtin");
+
 const jetzig = @import("jetzig");
 const http = std.http;
 const Header = http.Header;
@@ -455,9 +457,9 @@ pub const OAuthManager = struct {
             .name = self.config.state_cookie_name,
             .value = state,
             .path = "/",
-            .http_only = true,
-            .secure = true,
-            .same_site = .lax,
+            .http_only = if (builtin.mode == .Debug) false else true,
+            .secure = if (builtin.mode == .Debug) false else true,
+            .same_site = if (builtin.mode == .Debug) .lax else .strict,
             .max_age = self.config.state_cookie_max_age,
         });
 
