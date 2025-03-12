@@ -453,7 +453,7 @@ pub const OAuthManager = struct {
         const state = try self.generateState();
 
         // Store state in a cookie
-        try cookie_utils.set_cookie(request, self.config.state_cookie_name, state, true);
+        try cookie_utils.set_oauth_cookie(request, state);
 
         return try provider.getAuthorizationUrl(state);
     }

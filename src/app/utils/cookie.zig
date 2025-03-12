@@ -1,23 +1,33 @@
 const std = @import("std");
 const jetzig = @import("jetzig");
 
-pub fn set_cookie(request: *jetzig.Request, name: []const u8, value: []const u8, is_oauth: bool) !void {
+pub fn set_cookie(request: *jetzig.Request, name: []const u8, value: []const u8) !void {
     var cookies = try request.cookies();
 
     const on_https = request.global.config_manager.security_config.on_https;
-    //std.log.scoped(.utils).debug("About to set cookie: {s}={s}", .{ name, value });
     try cookies.put(.{
         .name = name,
         .value = value,
         .domain = request.global.config_manager.security_config.session.cookie_domain,
         .path = "/",
-        .http_only = if (jetzig.environment == .development and !on_https) false else true,
-        .secure = if (jetzig.environment == .development and !on_https) false else true,
-        .same_site = if (is_oauth) .lax else .strict,
-        // .http_only = false,
-        // .secure = false,
-        // .same_site = .lax,
+        .http_only = if (jetzig.environment == .development or !on_https) false else true,
+        .secure = if (jetzig.environment == .development or !on_https) false else true,
+        .same_site = .strict,
         .max_age = 60 * 60 * 24 * 90, // 90 days in seconds
     });
-    //std.log.scoped(.utils).debug("Finished setting cookie", .{});
+}
+
+pub fn set_oauth_cookie(request: *jetzig.Request, value: []const u8) !void {
+    var cookies = try request.cookies();
+
+    try cookies.put(.{
+        .name = request.global.config_manager.security_config.oauth.state_cookie_name,
+        .value = value,
+        .domain = request.global.config_manager.security_config.session.cookie_domain,
+        .path = "/",
+        .http_only = true,
+        .secure = true,
+        .same_site = .lax,
+        .max_age = 60 * 5, // 5 minutes in seconds
+    });
 }
