@@ -36,7 +36,7 @@ pub const RedisError = error{
 };
 
 pub const RedisClientConfig = struct {
-    host: []const u8 = "localhost",
+    host: []const u8 = "127.0.0.1",
     port: u16 = 6379,
     min_connections: usize = 3,
     max_connections: usize = 50,

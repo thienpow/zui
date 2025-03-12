@@ -52,11 +52,6 @@ pub const jetzig_options = struct {
     pub const job_worker_sleep_interval_ms: usize = 10;
     pub const Schema = @import("Schema");
 
-    pub const cookies: jetzig.http.Cookies.CookieOptions = .{
-        .domain = "127.0.0.1",
-        .path = "/",
-    };
-
     pub const store: jetzig.kv.Store.KVOptions = .{
         .backend = .memory,
     };
@@ -78,34 +73,35 @@ pub fn init(app: *jetzig.App) !void {
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-
-    const allocator = if (builtin.mode == .Debug) gpa.allocator() else std.heap.c_allocator;
-    defer if (builtin.mode == .Debug) std.debug.assert(gpa.deinit() == .ok);
+    defer {
+        const deinit_status = gpa.deinit();
+        if (deinit_status == .leak) std.log.err("Memory leaks detected!", .{});
+    }
+    const allocator = gpa.allocator();
 
     var app = try jetzig.init(allocator);
     defer app.deinit();
 
     // Initialize the configuration manager
-    var config_manager = try ConfigManager.init(allocator);
-    defer config_manager.deinit();
+    const config_manager_ptr = try allocator.create(ConfigManager);
+    errdefer allocator.destroy(config_manager_ptr);
+    config_manager_ptr.* = try ConfigManager.init(allocator);
 
     // --- Use the loaded configurations ---
     const redis_pool_ptr = try allocator.create(PooledRedisClient);
     errdefer allocator.destroy(redis_pool_ptr);
 
-    redis_pool_ptr.* = PooledRedisClient.init(allocator, config_manager.redis_config) catch |err| {
-        std.log.scoped(.main).err("Failed to initialize Redis pool: {}", .{err});
-        return err;
-    };
+    std.log.scoped(.main).debug("Host: {s}", .{config_manager_ptr.redis_config.host});
+    redis_pool_ptr.* = try PooledRedisClient.init(allocator, config_manager_ptr.redis_config);
 
-    var security = try Security.init(allocator, config_manager.security_config, redis_pool_ptr);
+    var security = try Security.init(allocator, config_manager_ptr.security_config, redis_pool_ptr);
     defer security.deinit();
     // -------------------------------------
 
     const global = try allocator.create(Global);
     global.* = .{
         .security = security,
-        .config_manager = config_manager,
+        .config_manager = config_manager_ptr.*,
     };
 
     try app.start(routes, .{ .global = global });

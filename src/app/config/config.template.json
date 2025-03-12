@@ -9,7 +9,7 @@
       "protected_routes": [
         {
           "prefix": "/admin",
-          "strategies": ["session", "oauth"],
+          "strategies": ["oauth", "session"],
           "required_roles": ["admin"]
         },
         {
@@ -77,8 +77,8 @@
         {
           "provider": "google",
           "name": "Google",
-          "client_id": "",
-          "client_secret": "",
+          "client_id": "460727759418-j1oifede684t7m044pmo30mpb619e3bs.apps.googleusercontent.com",
+          "client_secret": "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",
           "auth_url": "https://accounts.google.com/o/oauth2/v2/auth",
           "token_url": "https://oauth2.googleapis.com/token",
           "userinfo_url": "https://www.googleapis.com/oauth2/v3/userinfo",
@@ -89,8 +89,8 @@
         {
           "provider": "github",
           "name": "GitHub",
-          "client_id": "",
-          "client_secret": "",
+          "client_id": "Ov23liJ9D0ig1Hrhwvyv",
+          "client_secret": "2727d61de936b59c25f81f4adf4b93306f44ce96",
           "auth_url": "https://github.com/login/oauth/authorize",
           "token_url": "https://github.com/login/oauth/access_token",
           "userinfo_url": "https://api.github.com/user",

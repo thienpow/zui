@@ -53,11 +53,14 @@ pub const RedisClient = struct {
             //else => return RedisError.ConnectionFailed, // Fallback for unexpected errors
         };
 
-        const socket = std.net.tcpConnectToHost(allocator, config.host, config.port) catch |err| {
+        const address = std.net.Address.parseIp(config.host, config.port) catch |err| {
+            std.log.err("Failed to parse IP {s}:{d}: {}", .{ config.host, config.port, err });
+            return error.ConnectionFailed;
+        };
+        const socket = std.net.tcpConnectToAddress(address) catch |err| {
             return switch (err) {
                 error.ConnectionRefused => RedisError.ConnectionRefused,
                 error.NetworkUnreachable, error.ConnectionTimedOut => RedisError.NetworkError,
-                error.OutOfMemory => RedisError.OutOfMemory,
                 else => RedisError.ConnectionFailed,
             };
         };
