@@ -7,7 +7,7 @@ pub fn set_cookie(request: *jetzig.Request, name: []const u8, value: []const u8)
     try cookies.put(.{
         .name = name,
         .value = value,
-        //.domain = request.global.config_manager.security_config.session.cookie_domain,
+        .domain = request.global.config_manager.security_config.session.cookie_domain,
         .path = "/",
         .http_only = true,
         .secure = true,
@@ -22,7 +22,7 @@ pub fn set_oauth_cookie(request: *jetzig.Request, value: []const u8) !void {
     try cookies.put(.{
         .name = request.global.config_manager.security_config.oauth.state_cookie_name,
         .value = value,
-        //.domain = request.global.config_manager.security_config.session.cookie_domain,
+        .domain = request.global.config_manager.security_config.session.cookie_domain,
         .path = "/",
         .http_only = true,
         .secure = true,
