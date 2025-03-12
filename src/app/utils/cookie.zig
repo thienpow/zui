@@ -4,14 +4,13 @@ const jetzig = @import("jetzig");
 pub fn set_cookie(request: *jetzig.Request, name: []const u8, value: []const u8) !void {
     var cookies = try request.cookies();
 
-    const on_https = request.global.config_manager.security_config.on_https;
     try cookies.put(.{
         .name = name,
         .value = value,
         .domain = request.global.config_manager.security_config.session.cookie_domain,
         .path = "/",
-        .http_only = if (jetzig.environment == .development or !on_https) false else true,
-        .secure = if (jetzig.environment == .development or !on_https) false else true,
+        .http_only = true,
+        .secure = true,
         .same_site = .strict,
         .max_age = 60 * 60 * 24 * 90, // 90 days in seconds
     });
