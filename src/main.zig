@@ -52,6 +52,8 @@ pub const jetzig_options = struct {
     pub const job_worker_sleep_interval_ms: usize = 10;
     pub const Schema = @import("Schema");
 
+    pub const cookies: jetzig.http.Cookies.CookieOptions = .{ .domain = "zui.kavod.app" };
+
     pub const store: jetzig.kv.Store.KVOptions = .{
         .backend = .memory,
     };
