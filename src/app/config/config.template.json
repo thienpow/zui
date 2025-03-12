@@ -5,6 +5,7 @@
     "max_connections": 10
   },
   "security": {
+    "on_https": false,
     "middleware": {
       "protected_routes": [
         {

@@ -94,11 +94,6 @@ pub const ConfigManager = struct {
         self.redis_config = parsed.value.redis;
         self.security_config = parsed.value.security;
 
-        std.log.scoped(.config).info("[ConfigManager.load] Loaded redis host: {s}, port: {d}", .{
-            self.redis_config.host,
-            self.redis_config.port,
-        });
-
         std.log.scoped(.config).info("[ConfigManager.load] Configuration loaded successfully", .{});
     }
 

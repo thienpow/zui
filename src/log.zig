@@ -25,8 +25,8 @@ pub fn log(
     // Skip specific debug logs
     if (level == .debug) {
         if (scope == .redis or
-            //scope == .config or
-            scope == .auth or
+            scope == .config or
+            //scope == .auth or
             //scope == .utils or
             scope == .other)
         {
