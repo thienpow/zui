@@ -28,7 +28,7 @@ pub const SecurityConfig = struct {
 };
 
 pub const SessionConfig = struct {
-    cookie_name: []const u8 = "session_token",
+    cookie_name: []const u8 = "session_zui",
     cookie_domain: []const u8 = "127.0.0.1",
     session_ttl: i64 = 24 * 60 * 60, // 24 hours in seconds
     max_sessions_per_user: u32 = 5,
@@ -97,7 +97,7 @@ pub const OAuthProviderConfig = struct {
 
 pub const OAuthConfig = struct {
     enabled: bool = false,
-    state_cookie_name: []const u8 = "session_token",
+    state_cookie_name: []const u8 = "oauth_token",
     state_cookie_max_age: i64 = 600,
     providers: []const OAuthProviderConfig = &.{},
     default_redirect: []const u8 = "/dashboard",

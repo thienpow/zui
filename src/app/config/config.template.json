@@ -40,7 +40,7 @@
     },
     "session": {
       "max_sessions_per_user": 5,
-      "cookie_name": "session_token",
+      "cookie_name": "session_zui",
       "cookie_domain": "127.0.0.1",
       "session_ttl": 86400,
       "refresh_threshold": 3600,
@@ -69,7 +69,7 @@
     },
     "oauth": {
       "enabled": true,
-      "state_cookie_name": "session_token",
+      "state_cookie_name": "oauth_token",
       "state_cookie_max_age": 600,
       "default_redirect": "/admin/dashboard",
       "user_auto_create": true,

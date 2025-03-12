@@ -131,7 +131,7 @@ pub const SessionManager = struct {
 
     pub fn setSessionCookie(self: *SessionManager, request: *jetzig.Request, token: []const u8) !void {
         try cookie_utils.set_cookie(request, self.config.cookie_name, token, false);
-        std.log.scoped(.auth).debug("[SessionManager.setSessionCookie] Cookie 'session_token' set with value: '{s}', max_age: {}", .{ token, self.config.session_ttl });
+        std.log.scoped(.auth).debug("[SessionManager.setSessionCookie] Cookie '{s}' set with value: '{s}', max_age: {}", .{ self.config.cookie_name, token, self.config.session_ttl });
     }
 
     pub fn clearSessionCookie(self: *SessionManager, request: *jetzig.Request) !void {
@@ -146,14 +146,14 @@ pub const SessionManager = struct {
         const cookies = try request.cookies();
         std.log.scoped(.auth).debug("[SessionManager.getSessionTokenFromCookie] Successfully retrieved cookies object", .{});
 
-        // Check if the session_token cookie exists
-        std.log.scoped(.auth).debug("[SessionManager.getSessionTokenFromCookie] Looking for 'session_token' cookie", .{});
+        // Check if the cookie exists
+        std.log.scoped(.auth).debug("[SessionManager.getSessionTokenFromCookie] Looking for '{s}' cookie", .{self.config.cookie_name});
         if (cookies.get(self.config.cookie_name)) |cookie| {
-            std.log.scoped(.auth).debug("[SessionManager.getSessionTokenFromCookie] Found 'session_token' cookie with value: '{s}'", .{cookie.value});
+            std.log.scoped(.auth).debug("[SessionManager.getSessionTokenFromCookie] Found '{s}' cookie with value: '{s}'", .{ self.config.cookie_name, cookie.value });
             std.log.scoped(.auth).debug("[SessionManager.getSessionTokenFromCookie] Returning token: '{s}' (length: {})", .{ cookie.value, cookie.value.len });
             return cookie.value;
         } else {
-            std.log.scoped(.auth).debug("[SessionManager.getSessionTokenFromCookie] No 'session_token' cookie found", .{});
+            std.log.scoped(.auth).debug("[SessionManager.getSessionTokenFromCookie] No '{s}' cookie found", .{self.config.cookie_name});
             std.log.scoped(.auth).debug("[SessionManager.getSessionTokenFromCookie] Returning null", .{});
             return null;
         }
