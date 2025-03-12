@@ -8,7 +8,6 @@ const StorageType = types.StorageType;
 const ProtectedRoute = types.ProtectedRoute;
 
 pub const SecurityConfig = struct {
-    on_https: bool = false,
     middleware: AuthMiddlewareConfig,
     session: SessionConfig,
     storage: StorageConfig,
