@@ -8,14 +8,14 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
     };
 
     const params = try request.expectParams(Params) orelse {
-        try cookie_utils.set_cookie(request, "dark", "");
+        try cookie_utils.set_cookie(request, "dark", "", false);
 
         var root = try request.data(.object);
         try root.put("dark", "");
         return request.render(.created);
     };
 
-    try cookie_utils.set_cookie(request, "dark", params.dark);
+    try cookie_utils.set_cookie(request, "dark", params.dark, false);
 
     var root = try request.data(.object);
     try root.put("dark", "checked");

@@ -35,7 +35,7 @@ fn getDarkModeSetting(request: *jetzig.http.Request) ![]const u8 {
         if (cookies.get("dark")) |cookie| {
             break :blk cookie.value;
         } else {
-            try cookie_utils.set_cookie(request, "dark", "");
+            try cookie_utils.set_cookie(request, "dark", "", false);
 
             break :blk "";
         }

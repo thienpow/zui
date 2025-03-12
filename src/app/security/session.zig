@@ -130,12 +130,12 @@ pub const SessionManager = struct {
     // --- Cookie Management Functions ---
 
     pub fn setSessionCookie(self: *SessionManager, request: *jetzig.Request, token: []const u8) !void {
-        try cookie_utils.set_cookie(request, self.config.cookie_name, token);
+        try cookie_utils.set_cookie(request, self.config.cookie_name, token, false);
         std.log.scoped(.auth).debug("[SessionManager.setSessionCookie] Cookie 'session_token' set with value: '{s}', max_age: {}", .{ token, self.config.session_ttl });
     }
 
     pub fn clearSessionCookie(self: *SessionManager, request: *jetzig.Request) !void {
-        try cookie_utils.set_cookie(request, self.config.cookie_name, "");
+        try cookie_utils.set_cookie(request, self.config.cookie_name, "", false);
     }
 
     pub fn getSessionTokenFromCookie(self: *SessionManager, request: *jetzig.Request) !?[]const u8 {
