@@ -18,5 +18,6 @@ pub fn index(request: *jetzig.Request, _: *jetzig.Data) !jetzig.View {
         break :blk url;
     };
 
+    std.log.scoped(.auth).debug("[route.oauth.login] login_url: {s}", .{login_url});
     return request.redirect(login_url, .found);
 }
