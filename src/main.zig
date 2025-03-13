@@ -52,6 +52,19 @@ pub const jetzig_options = struct {
     pub const job_worker_sleep_interval_ms: usize = 10;
     pub const Schema = @import("Schema");
 
+    pub const cookies: jetzig.http.Cookies.CookieOptions = switch (jetzig.environment) {
+        .development, .testing => .{
+            .domain = "127.0.0.1",
+            .path = "/",
+        },
+        .production => .{
+            .secure = true,
+            .http_only = true,
+            .same_site = .lax,
+            .path = "/",
+        },
+    };
+
     pub const store: jetzig.kv.Store.KVOptions = .{
         .backend = .memory,
     };
