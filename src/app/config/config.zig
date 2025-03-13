@@ -2,16 +2,18 @@ const std = @import("std");
 const builtin = @import("builtin");
 const redis = @import("../../app/database/redis/redis.zig");
 const security = @import("../../app/security/config.zig");
-const types = @import("../../app/security/types.zig");
+const ServerConfig = @import("types.zig").ServerConfig;
 
 pub const ConfigManager = struct {
     const Self = @This();
     allocator: std.mem.Allocator,
+    server_config: ServerConfig,
     redis_config: redis.RedisClientConfig,
     security_config: security.SecurityConfig,
     config_file_path: []const u8,
 
     const AppConfig = struct {
+        server: ServerConfig,
         redis: redis.RedisClientConfig,
         security: security.SecurityConfig,
     };
@@ -59,6 +61,7 @@ pub const ConfigManager = struct {
 
         var manager = Self{
             .allocator = allocator,
+            .server_config = undefined,
             .redis_config = undefined,
             .security_config = undefined,
             .config_file_path = config_file_path.?,
@@ -91,6 +94,7 @@ pub const ConfigManager = struct {
             .ignore_unknown_fields = true,
         });
 
+        self.server_config = parsed.value.server;
         self.redis_config = parsed.value.redis;
         self.security_config = parsed.value.security;
 
@@ -104,6 +108,7 @@ pub const ConfigManager = struct {
         defer file.close();
 
         const app_config = AppConfig{
+            .server = self.server_config,
             .redis = self.redis_config,
             .security = self.security_config,
         };

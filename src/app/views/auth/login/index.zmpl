@@ -64,6 +64,12 @@
                hx-boost="true"
                hx-target=".auth-container"
                hx-swap="innerHTML">Sign up</a></p>
+            <p>Or,
+                <a href="/auth/forgot_password"
+                    hx-boost="true"
+                    hx-target=".auth-container"
+                    hx-swap="innerHTML">Forgot Password?</a>
+            </p>
         </div>
 
         <div class="oauth-providers">

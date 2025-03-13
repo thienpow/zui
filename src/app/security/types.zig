@@ -8,9 +8,11 @@ pub const SecurityEvent = enum {
     login_success,
     login_failed,
     logout,
+    password_reset,
+    password_reset_blocked,
+    password_reset_request,
+    password_reset_request_blocked,
     password_changed,
-    password_reset_requested,
-    password_reset_completed,
 
     // Session events
     session_created,

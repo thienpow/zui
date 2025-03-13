@@ -2,6 +2,9 @@ const std = @import("std");
 const jetzig = @import("jetzig");
 
 const ip_utils = @import("../utils/ip.zig");
+const token_utils = @import("../utils/token.zig");
+const email_utils = @import("../utils/email.zig");
+const password_utils = @import("../utils/password.zig");
 
 const redis = @import("../database/redis/redis.zig");
 const PooledRedisClient = redis.PooledRedisClient;
@@ -54,6 +57,7 @@ pub const Security = struct {
     rate_limiter: RateLimiter,
     middleware: AuthMiddleware,
     oauth: OAuthManager,
+    redis_pool: *PooledRedisClient,
 
     pub fn init(allocator: std.mem.Allocator, security_config: SecurityConfig, redis_pool: *PooledRedisClient) !Security {
         return Security{
@@ -92,6 +96,7 @@ pub const Security = struct {
                 .allocator = allocator,
                 .config = security_config.oauth,
             },
+            .redis_pool = redis_pool,
         };
     }
 
@@ -490,6 +495,269 @@ pub const Security = struct {
         } else {
             std.log.scoped(.auth).debug("[Security.logout] No session token found in cookie", .{});
         }
+    }
+
+    pub fn requestPasswordReset(self: *Security, request: *jetzig.Request, options: struct { email: []const u8 }) !void {
+        // Check rate limits first to prevent abuse
+        // Create a unique identifier for password reset rate limiting
+        // This prefixes the identifier to distinguish it from login attempts
+        const reset_identifier = try std.fmt.allocPrint(self.allocator, "pwd_reset:{s}", .{ip_utils.getClientIp(request)});
+        defer self.allocator.free(reset_identifier);
+
+        // Use the existing rate limiter
+        const rate_limit_info = try self.rate_limiter.check(reset_identifier);
+
+        // Check if account is locked
+        if (rate_limit_info.is_locked) {
+            std.log.scoped(.auth).debug("[Security.requestPasswordReset] Account locked, returning AccountLocked", .{});
+            return SecurityError.AccountLocked;
+        }
+
+        // Check if rate limit is exceeded
+        if (rate_limit_info.remaining == 0) {
+            std.log.scoped(.auth).debug("[Security.requestPasswordReset] Rate limit exceeded, returning RateLimitExceeded", .{});
+            try self.audit.log(
+                .password_reset_request_blocked,
+                null,
+                .{
+                    .action_details = "Rate limit exceeded for password reset",
+                    .ip_address = ip_utils.getClientIp(request),
+                    .user_agent = request.headers.get("User-Agent"),
+                },
+            );
+            return SecurityError.RateLimitExceeded;
+        }
+
+        // Validate email format
+        if (!email_utils.isValidEmail(options.email)) {
+            try self.audit.log(
+                .password_reset_request,
+                null,
+                .{
+                    .action_details = "Invalid email format",
+                    .ip_address = ip_utils.getClientIp(request),
+                    .user_agent = request.headers.get("User-Agent"),
+                },
+            );
+            return SecurityError.ValidationError;
+        }
+
+        // Find the user by email
+        const query = jetzig.database.Query(.User).findBy(.{ .email = options.email });
+        const user = request.repo.execute(query) catch |err| {
+            std.log.scoped(.auth).debug("[Security.requestPasswordReset] Database error during forgot password: {}", .{err});
+            try self.audit.log(
+                .password_reset_request,
+                null,
+                .{
+                    .action_details = "Database error",
+                    .ip_address = ip_utils.getClientIp(request),
+                },
+            );
+            return SecurityError.DatabaseError;
+        } orelse {
+            // IMPORTANT: Don't reveal whether the email exists in response.
+            // But we still log it internally for auditing
+            std.log.scoped(.auth).debug("[Security.requestPasswordReset] User with email {s} not found", .{options.email});
+            try self.audit.log(
+                .password_reset_request,
+                null,
+                .{
+                    .action_details = "Email not found, but faking success",
+                    .ip_address = ip_utils.getClientIp(request),
+                },
+            );
+            // Return without error to prevent user enumeration
+            return;
+        };
+
+        // Generate a secure token
+        const token = try token_utils.generateSecureToken(self.allocator);
+        defer self.allocator.free(token);
+
+        // Store the token in Redis with user ID association
+        var redis_client = try self.redis_pool.acquire();
+        defer self.redis_pool.release(redis_client);
+
+        const user_id_str = try std.fmt.allocPrint(self.allocator, "{d}", .{user.id});
+        defer self.allocator.free(user_id_str);
+
+        const token_key = try std.fmt.allocPrint(self.allocator, "pwd_reset:{s}", .{token});
+        defer self.allocator.free(token_key);
+
+        try redis_client.setEx(token_key, user_id_str, 3600); // Expire in 1 hour (3600 seconds)
+        std.log.scoped(.auth).debug("[Security.requestPasswordReset] Setting token in Redis: key={s}, value={s}\n", .{ token_key, user_id_str });
+
+        const ttl = try redis_client.ttl(token_key);
+        std.log.scoped(.auth).debug("[Security.requestPasswordReset] Token TTL set to {any} seconds\n", .{ttl});
+
+        // Log the successful token creation
+        try self.audit.log(
+            .password_reset_request,
+            @intCast(user.id),
+            .{
+                .action_details = "Password reset token generated and stored",
+                .ip_address = ip_utils.getClientIp(request),
+            },
+        );
+
+        // Generate reset URL
+        const reset_url = try std.fmt.allocPrint(self.allocator, "{s}/auth/reset_password?token={s}", .{ request.global.config_manager.server_config.base_url, token });
+        defer self.allocator.free(reset_url);
+
+        // Send the reset email
+        // try self.communications.sendPasswordResetEmail(options.email, reset_url);
+
+        std.log.scoped(.auth).debug("[Security.requestPasswordReset] Password reset email sent to {s}, reset_url: {s}", .{ options.email, reset_url });
+    }
+
+    pub fn resetPassword(self: *Security, request: *jetzig.Request, options: struct {
+        token: []const u8,
+        password: []const u8,
+        password_confirm: []const u8,
+    }) !void {
+        // Check rate limits first to prevent brute-force attacks
+        const client_ip = ip_utils.getClientIp(request);
+        const reset_identifier = try std.fmt.allocPrint(self.allocator, "pwd_reset_attempt:{s}", .{client_ip});
+        defer self.allocator.free(reset_identifier);
+
+        const rate_limit_info = try self.rate_limiter.check(reset_identifier);
+
+        // Check if account is locked
+        if (rate_limit_info.is_locked) {
+            std.log.scoped(.auth).debug("[Security.resetPassword] Account locked, returning AccountLocked", .{});
+            return SecurityError.AccountLocked;
+        }
+
+        // Check if rate limit is exceeded
+        if (rate_limit_info.remaining == 0) {
+            std.log.scoped(.auth).debug("[Security.resetPassword] Rate limit exceeded, returning RateLimitExceeded", .{});
+            try self.audit.log(
+                .password_reset_blocked,
+                null,
+                .{
+                    .action_details = "Rate limit exceeded for password reset attempts",
+                    .ip_address = client_ip,
+                    .user_agent = request.headers.get("User-Agent"),
+                },
+            );
+            return SecurityError.RateLimitExceeded;
+        }
+
+        // Validate that passwords match
+        if (!std.mem.eql(u8, options.password, options.password_confirm)) {
+            try self.audit.log(
+                .password_reset,
+                null,
+                .{
+                    .action_details = "Password mismatch",
+                    .ip_address = client_ip,
+                    .user_agent = request.headers.get("User-Agent"),
+                },
+            );
+            return SecurityError.PasswordMismatch;
+        }
+
+        // Validate password strength
+        if (!password_utils.isStrongPassword(options.password)) {
+            try self.audit.log(
+                .password_reset,
+                null,
+                .{
+                    .action_details = "Password too weak",
+                    .ip_address = client_ip,
+                    .user_agent = request.headers.get("User-Agent"),
+                },
+            );
+            return SecurityError.WeakPassword;
+        }
+
+        // Get Redis client from pool
+        var redis_client = try self.redis_pool.acquire();
+        defer self.redis_pool.release(redis_client);
+
+        // Format token key
+        const token_key = try std.fmt.allocPrint(self.allocator, "pwd_reset:{s}", .{options.token});
+        defer self.allocator.free(token_key);
+
+        // Validate the token
+        const user_id_str = blk: {
+            const maybe_token = try redis_client.get(token_key);
+            std.log.scoped(.auth).debug("[Security.resetPassword] redis_client.get({s}) returned {?s}\n", .{ token_key, maybe_token });
+
+            const result = maybe_token orelse {
+                std.log.scoped(.auth).debug("[Security.resetPassword] Token is null or expired for key: {s}\n", .{token_key});
+                try self.audit.log(
+                    .password_reset,
+                    null,
+                    .{
+                        .action_details = "Invalid or expired token",
+                        .ip_address = client_ip,
+                        .user_agent = request.headers.get("User-Agent"),
+                    },
+                );
+                std.log.scoped(.auth).debug("[Security.resetPassword] Audit log recorded for invalid token from IP: {s}\n", .{client_ip});
+                return SecurityError.InvalidToken;
+            };
+
+            std.log.scoped(.auth).debug("[Security.resetPassword] Successfully retrieved user_id_str: {s}\n", .{result});
+            break :blk result;
+        };
+        defer self.allocator.free(user_id_str);
+
+        // Parse user id
+        const user_id = std.fmt.parseInt(u64, user_id_str, 10) catch {
+            try self.audit.log(
+                .password_reset,
+                null,
+                .{
+                    .action_details = "Invalid user_id format in token",
+                    .ip_address = client_ip,
+                    .user_agent = request.headers.get("User-Agent"),
+                },
+            );
+            return SecurityError.InvalidToken;
+        };
+
+        // Hash the new password
+        const password_hash = try password_utils.hashPassword(self.allocator, options.password);
+        defer self.allocator.free(password_hash);
+
+        // Update the user's password in the database
+        const query = jetzig.database.Query(.User).update(.{
+            .password_hash = password_hash,
+        }).where(.{ .id = user_id });
+
+        _ = request.repo.execute(query) catch |err| {
+            std.log.scoped(.auth).debug("[Security.resetPassword] Failed to update password: {}", .{err});
+            try self.audit.log(
+                .password_reset,
+                user_id,
+                .{
+                    .action_details = "Database error while updating password",
+                    .ip_address = client_ip,
+                    .user_agent = request.headers.get("User-Agent"),
+                },
+            );
+            return SecurityError.DatabaseError;
+        };
+
+        // Invalidate the token (delete from Redis)
+        _ = try redis_client.del(token_key);
+
+        // Log successful password reset
+        try self.audit.log(
+            .password_reset,
+            user_id,
+            .{
+                .action_details = "Password successfully reset",
+                .ip_address = client_ip,
+                .user_agent = request.headers.get("User-Agent"),
+            },
+        );
+
+        // If we made it here, the password reset was successful
+        std.log.scoped(.auth).debug("[Security.resetPassword] Password successfully reset for user {d}", .{user_id});
     }
 
     fn getAuthToken(self: *Security, request: *jetzig.Request) ?[]const u8 {

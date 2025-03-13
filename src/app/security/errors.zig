@@ -20,4 +20,6 @@ pub const SecurityError = error{
     ValidationError,
     MetadataValidationFailed,
     InternalError,
+    PasswordMismatch,
+    WeakPassword,
 };

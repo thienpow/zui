@@ -1,5 +1,6 @@
 const std = @import("std");
 const jetzig = @import("jetzig");
+const password_utils = @import("../../utils/password.zig");
 
 pub const layout = "auth";
 pub fn index(request: *jetzig.Request, _: *jetzig.Data) !jetzig.View {
@@ -19,7 +20,7 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
 
     const allocator = request.allocator;
     // Hash the password
-    const hashedPassword = try jetzig.auth.hashPassword(allocator, params.password);
+    const hashedPassword = try password_utils.hashPassword(allocator, params.password);
 
     try request.repo.insert(.User, .{
         .username = params.username,

@@ -1,11 +1,11 @@
 {
+  "server": { "base_url": "http://127.0.0.1:8080" },
   "redis": {
     "host": "127.0.0.1",
     "port": 6379,
     "max_connections": 10
   },
   "security": {
-    "on_https": false,
     "middleware": {
       "protected_routes": [
         {

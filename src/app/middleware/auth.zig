@@ -19,6 +19,7 @@ pub fn deinit(self: *auth, request: *jetzig.http.Request) void {
 pub fn afterRequest(self: *auth, request: *jetzig.http.Request) !void {
     // Only handle authentication logic
     const is_auth_path = isAuthPath(request.path.path);
+    std.log.scoped(.auth).debug("[auth.afterRequest] Route is {}", .{is_auth_path});
     if (is_auth_path) return;
 
     const auth_success = try authenticateRequest(self, request);
@@ -36,8 +37,7 @@ pub fn afterResponse(self: *auth, request: *jetzig.http.Request, response: *jetz
 
 // Helper function to determine if we're on an auth page
 fn isAuthPath(path: []const u8) bool {
-    return std.mem.startsWith(u8, path, "/auth/login") or
-        std.mem.startsWith(u8, path, "/auth/register");
+    return std.mem.startsWith(u8, path, "/auth");
 }
 
 // Main authentication function

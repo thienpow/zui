@@ -6,6 +6,7 @@ const types = @import("types.zig");
 const config = @import("config.zig");
 const redis = @import("../database/redis/redis.zig");
 const cookie_utils = @import("../utils/cookie.zig");
+const token_utils = @import("../utils/token.zig");
 
 const SessionStorage = @import("storage.zig").SessionStorage;
 const PooledRedisClient = redis.PooledRedisClient;
@@ -22,14 +23,6 @@ pub const SessionManager = struct {
 
     fn generateSessionId(self: *SessionManager) ![]const u8 {
         var random_bytes: [32]u8 = undefined;
-        crypto.random.bytes(&random_bytes);
-        const encoded_len = std.base64.standard.Encoder.calcSize(random_bytes.len);
-        const encoded = try self.allocator.alloc(u8, encoded_len);
-        return std.base64.standard.Encoder.encode(encoded, &random_bytes);
-    }
-
-    fn generateSecureToken(self: *SessionManager) ![]const u8 {
-        var random_bytes: [48]u8 = undefined;
         crypto.random.bytes(&random_bytes);
         const encoded_len = std.base64.standard.Encoder.calcSize(random_bytes.len);
         const encoded = try self.allocator.alloc(u8, encoded_len);
@@ -57,7 +50,7 @@ pub const SessionManager = struct {
         const session = Session{
             .id = try self.generateSessionId(),
             .user_id = user.id,
-            .token = try self.generateSecureToken(),
+            .token = try token_utils.generateSecureToken(self.allocator),
             .created_at = std.time.timestamp(),
             .expires_at = std.time.timestamp() + self.config.session_ttl,
             .metadata = .{
@@ -108,7 +101,7 @@ pub const SessionManager = struct {
     pub fn refresh(self: *SessionManager, session: Session, request: *jetzig.Request) !Session {
         var new_session = session;
         new_session.id = try self.generateSessionId();
-        new_session.token = try self.generateSecureToken();
+        new_session.token = try token_utils.generateSecureToken(self.allocator);
         new_session.expires_at = std.time.timestamp() + self.config.session_ttl;
 
         try self.storage.saveSession(new_session);
