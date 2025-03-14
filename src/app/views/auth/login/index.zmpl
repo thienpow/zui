@@ -61,11 +61,11 @@
 
         <div class="auth-footer">
             <p>Don't have an account?
-                <a href="/auth/register">Sign up
+                <a href="/auth/register" hx-boost="true">Sign up
                 </a>
             </p>
             <p>Or,
-                <a href="/auth/forgot_password">Forgot Password?
+                <a href="/auth/forgot_password" hx-boost="true">Forgot Password?
                 </a>
             </p>
         </div>
@@ -93,55 +93,3 @@
         </div>
     </div>
 </div>
-
-<script>
-    const errorMessageContainer = document.querySelector('#error-message');
-    const authForm = document.querySelector('.auth-form');
-
-    const handleResponseError = (event) => {
-        const { xhr } = event.detail;
-
-        switch (xhr.status) {
-            case 401:
-                errorMessageContainer.innerHTML = "Invalid email or password. Please try again.";
-                break;
-            case 403:
-                errorMessageContainer.innerHTML = "Your account has been locked due to multiple failed attempts. Please contact support.";
-                break;
-            case 404:
-                errorMessageContainer.innerHTML = "Account not found. Please check your email or register for a new account.";
-                break;
-            case 429:
-                errorMessageContainer.innerHTML = "Too many login attempts. Please try again later.";
-                break;
-            case 400:
-                errorMessageContainer.innerHTML = "Invalid input. Please check your email and password format.";
-                break;
-            case 422:
-                errorMessageContainer.innerHTML = "Please provide both email and password.";
-                break;
-            case 500:
-            default:
-                errorMessageContainer.innerHTML = "An unexpected error occurred. Please try again later or contact support.";
-                break;
-        }
-    };
-
-    const handleAfterRequest = (event) => {
-        const { xhr } = event.detail;
-
-        if (xhr.status === 201) {
-            errorMessageContainer.innerHTML = "Success.";
-            window.location.href = "/admin/dashboard";
-        }
-    };
-
-    const handleSubmit = (event) => {
-        errorMessageContainer.innerHTML = "";
-    };
-
-    document.body.addEventListener('htmx:responseError', handleResponseError);
-    document.body.addEventListener('htmx:afterRequest', handleAfterRequest);
-    authForm.addEventListener('submit', handleSubmit);
-
-</script>

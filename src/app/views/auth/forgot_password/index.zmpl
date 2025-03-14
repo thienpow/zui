@@ -5,7 +5,7 @@
             <p>Enter your email address and we'll send you a link to reset your password.</p>
         </div>
         <div id="error-message" class="error-message"></div>
-        <form class="auth-form"
+        <form id="auth-form" class="auth-form"
             hx-post="/auth/forgot_password"
             hx-trigger="submit"
             hx-target="#error-message"
@@ -27,45 +27,10 @@
         </form>
         <div class="auth-footer">
             <p>Remember your password?
-                <a href="/auth/login">Sign in
+                <a href="/auth/login" hx-boost="true">Sign in
                 </a>
             </p>
         </div>
 
     </div>
 </div>
-
-<script>
-    const errorMessageContainer = document.querySelector('#error-message');
-    const authForm = document.querySelector('.auth-form');
-
-    const handleResponseError = (event) => {
-        const { xhr } = event.detail;
-
-        switch (xhr.status) {
-            case 422:
-                errorMessageContainer.innerHTML = "Please provide your email address.";
-                break;
-            case 500:
-            default:
-                errorMessageContainer.innerHTML = "An unexpected error occurred. Please try again later.";
-                break;
-        }
-    };
-
-    const handleAfterRequest = (event) => {
-        const { xhr } = event.detail;
-        if (xhr.status === 201) {
-            errorMessageContainer.innerHTML = "If that email address is in our system, we have sent a password reset link.  Wait.., no email system made yet. check debug log for the reset_url.";
-        }
-    };
-
-    const handleSubmit = (event) => {
-        errorMessageContainer.innerHTML = "";
-    };
-
-    document.body.addEventListener('htmx:responseError', handleResponseError);
-    document.body.addEventListener('htmx:afterRequest', handleAfterRequest);
-    authForm.addEventListener('submit', handleSubmit);
-
-</script>

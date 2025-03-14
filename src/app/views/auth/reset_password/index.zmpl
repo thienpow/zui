@@ -38,49 +38,9 @@
         </form>
         <div class="auth-footer">
              <p>Remember your password?
-                 <a href="/auth/login">Sign in
+                 <a href="/auth/login" hx-boost="true">Sign in
                  </a>
              </p>
         </div>
     </div>
 </div>
-
-<script>
-    const errorMessageContainer = document.querySelector('#error-message');
-    const authForm = document.querySelector('.auth-form');
-
-    const handleResponseError = (event) => {
-        const { xhr } = event.detail;
-
-        switch (xhr.status) {
-            case 400:
-                errorMessageContainer.innerHTML = "Password does not match, weak, or bad.";
-                break;
-            case 401:
-                errorMessageContainer.innerHTML = "Invalid or expired token. Please try again or request a new password reset link.";
-                break;
-            case 422:
-                errorMessageContainer.innerHTML = "Please enter a new password";
-            case 500:
-            default:
-                errorMessageContainer.innerHTML = "An unexpected error occurred. Please try again later.";
-                break;
-        }
-    };
-
-    const handleAfterRequest = (event) => {
-        const { xhr } = event.detail;
-        if (xhr.status === 201) {
-            errorMessageContainer.innerHTML = "Done reset password. You can go to login page to login now.";
-        }
-    };
-
-    const handleSubmit = (event) => {
-        errorMessageContainer.innerHTML = "";
-    };
-
-    document.body.addEventListener('htmx:responseError', handleResponseError);
-    document.body.addEventListener('htmx:afterRequest', handleAfterRequest);
-    authForm.addEventListener('submit', handleSubmit);
-
-</script>

@@ -53,39 +53,3 @@
         </div>
     </div>
 </div>
-
-<script>
-    const errorMessageContainer = document.querySelector('#error-message');
-    const authForm = document.querySelector('.auth-form');
-
-    const handleResponseError = (event) => {
-        const { xhr } = event.detail;
-        if (xhr.status === 422) { // Validation errors
-            try {
-                const errors = JSON.parse(xhr.responseText);
-                errorMessageContainer.innerHTML = errors.message || Object.values(errors).join("<br>"); // Display general message or individual field errors
-            } catch (e) {
-                errorMessageContainer.innerHTML = "An error occurred during registration. Please try again.";
-            }
-
-        } else if (xhr.status === 400) {
-            errorMessageContainer.innerHTML = xhr.responseText;
-        }
-    };
-
-    const handleAfterRequest = (event) => {
-        const { xhr } = event.detail;
-        if (xhr.status === 201) {
-            window.location.href = "/auth/login";
-        }
-    };
-
-    const handleSubmit = (event) => {
-        errorMessageContainer.innerHTML = "";
-    };
-
-    document.body.addEventListener('htmx:responseError', handleResponseError);
-    document.body.addEventListener('htmx:afterRequest', handleAfterRequest);
-    authForm.addEventListener('submit', handleSubmit);
-
-</script>
