@@ -488,7 +488,7 @@ pub const OAuthManager = struct {
             .last_login_at = std.time.timestamp(),
         };
 
-        const session = try request.global.security.session.create(user, request);
+        const session = try request.global.security.session.create(request, user, true);
         std.log.scoped(.auth).debug("[oauth.handleOAuthCallback] Created session with token: '{s}' for user_id: {}", .{ session.token, user_id });
 
         return AuthResult{

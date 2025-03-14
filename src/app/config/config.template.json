@@ -10,7 +10,7 @@
       "protected_routes": [
         {
           "prefix": "/admin",
-          "strategies": ["oauth", "session"],
+          "strategies": ["session", "oauth"],
           "required_roles": ["admin"]
         },
         {
@@ -42,7 +42,8 @@
       "max_sessions_per_user": 5,
       "cookie_name": "session_zui",
       "cookie_domain": "127.0.0.1",
-      "session_ttl": 86400,
+      "session_ttl": 7200,
+      "extended_session_ttl": 2592000,
       "refresh_threshold": 3600,
       "cleanup_interval": 3600
     },
@@ -98,19 +99,6 @@
           "redirect_uri": "http://127.0.0.1:8080/auth/oauth/callback/github",
           "scope": "user:email",
           "enabled": true
-        },
-        {
-          "provider": "custom",
-          "name": "Custom Provider",
-          "client_id": "CUSTOM_CLIENT_ID",
-          "client_secret": "CUSTOM_CLIENT_SECRET",
-          "auth_url": "https://custom-provider.com/oauth/authorize",
-          "token_url": "https://custom-provider.com/oauth/token",
-          "userinfo_url": "https://custom-provider.com/oauth/userinfo",
-          "redirect_uri": "http://127.0.0.1:8000/auth/oauth/callback/custom",
-          "scope": "profile email",
-          "custom_provider_id": "custom-provider",
-          "enabled": false
         }
       ]
     }

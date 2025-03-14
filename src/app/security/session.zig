@@ -29,7 +29,7 @@ pub const SessionManager = struct {
         return std.base64.standard.Encoder.encode(encoded, &random_bytes);
     }
 
-    pub fn create(self: *SessionManager, user: User, request: *jetzig.Request) !Session {
+    pub fn create(self: *SessionManager, request: *jetzig.Request, user: User, remember: bool) !Session {
         std.log.scoped(.auth).debug("[SessionManager.create] Checking active session count for user_id: {}", .{user.id});
         const active_sessions = try self.storage.getUserActiveSessions(user.id);
 
@@ -46,13 +46,20 @@ pub const SessionManager = struct {
             }
         }
 
+        var max_age: i64 = 0;
+        if (remember) {
+            max_age = self.config.extended_session_ttl; // remember will use extended_session_ttl
+        } else {
+            max_age = self.config.session_ttl; // not remember will use session_ttl
+        }
+
         std.log.scoped(.auth).debug("[SessionManager.create] Creating new session for user_id: {}", .{user.id});
         const session = Session{
             .id = try self.generateSessionId(),
             .user_id = user.id,
             .token = try token_utils.generateSecureToken(self.allocator),
             .created_at = std.time.timestamp(),
-            .expires_at = std.time.timestamp() + self.config.session_ttl,
+            .expires_at = std.time.timestamp() + max_age,
             .metadata = .{
                 .ip_address = user.last_ip,
                 .user_agent = request.headers.get("User-Agent") orelse user.last_user_agent,
@@ -63,8 +70,8 @@ pub const SessionManager = struct {
         std.log.scoped(.auth).debug("[SessionManager.create] Saving session with id: '{s}', token: '{s}'", .{ session.id, session.token });
         try self.storage.saveSession(session);
 
+        try cookie_utils.set_cookie_with_age(request, self.config.cookie_name, session.token, max_age);
         std.log.scoped(.auth).debug("[SessionManager.create] Setting session cookie with token: '{s}'", .{session.token});
-        try self.setSessionCookie(request, session.token);
 
         std.log.scoped(.auth).debug("[SessionManager.create] Session created successfully for user_id: {}", .{user.id});
         return session;
@@ -106,7 +113,8 @@ pub const SessionManager = struct {
 
         try self.storage.saveSession(new_session);
         try self.storage.invalidateSession(session.id);
-        try self.setSessionCookie(request, new_session.token);
+
+        try cookie_utils.set_cookie_with_age(request, self.config.cookie_name, new_session.token, self.config.session_ttl);
 
         return new_session;
     }
@@ -121,11 +129,6 @@ pub const SessionManager = struct {
     }
 
     // --- Cookie Management Functions ---
-
-    pub fn setSessionCookie(self: *SessionManager, request: *jetzig.Request, token: []const u8) !void {
-        try cookie_utils.set_cookie(request, self.config.cookie_name, token);
-        std.log.scoped(.auth).debug("[SessionManager.setSessionCookie] Cookie '{s}' set with value: '{s}', max_age: {}", .{ self.config.cookie_name, token, self.config.session_ttl });
-    }
 
     pub fn clearSessionCookie(self: *SessionManager, request: *jetzig.Request) !void {
         try cookie_utils.set_cookie(request, self.config.cookie_name, "");

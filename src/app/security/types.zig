@@ -169,7 +169,6 @@ pub const AuthStrategy = enum {
     session, // Cookie-based session
     jwt, // JWT bearer token
     api_key, // API key
-    basic, // HTTP Basic Auth
     oauth, // oauth2.0 support like google,github,X
     none, // No authentication (public route)
 };

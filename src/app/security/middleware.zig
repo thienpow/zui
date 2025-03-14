@@ -58,7 +58,6 @@ pub const AuthMiddleware = struct {
                 .session => try self.authenticateWithSession(request, protected_route),
                 .jwt => try self.authenticateWithJWT(request, protected_route),
                 .api_key => try self.authenticateWithApiKey(request, protected_route),
-                .basic => try self.authenticateWithBasicAuth(request, protected_route),
                 .oauth => try self.authenticateWithOAuth(request, protected_route),
                 .none => AuthResult{
                     .authenticated = true,
@@ -231,72 +230,6 @@ pub const AuthMiddleware = struct {
             .authenticated = true,
             .user_id = api_key_info.user_id,
             .strategy_used = .api_key,
-        };
-    }
-
-    fn authenticateWithBasicAuth(_: *const AuthMiddleware, request: *jetzig.Request, route: ProtectedRoute) !AuthResult {
-
-        // Get Basic Auth header
-        const auth_header = request.headers.get("Authorization") orelse {
-            return AuthResult{
-                .authenticated = false,
-                .errors = SecurityError.UnauthorizedAccess,
-                .strategy_used = .basic,
-            };
-        };
-
-        // Check Basic Auth format
-        if (!std.mem.startsWith(u8, auth_header, "Basic ")) {
-            return AuthResult{
-                .authenticated = false,
-                .errors = SecurityError.InvalidCredentials,
-                .strategy_used = .basic,
-            };
-        }
-
-        // Decode credentials (base64)
-        const encoded = auth_header[6..];
-        const decoded_size = try std.base64.standard.Decoder.calcSizeForSlice(encoded);
-        const decoded = try request.allocator.alloc(u8, decoded_size);
-        defer request.allocator.free(decoded);
-
-        _ = try std.base64.standard.Decoder.decode(decoded, encoded);
-
-        // Split username:password
-        const sep_idx = std.mem.indexOf(u8, decoded, ":") orelse {
-            return AuthResult{
-                .authenticated = false,
-                .errors = SecurityError.InvalidCredentials,
-                .strategy_used = .basic,
-            };
-        };
-
-        const username = decoded[0..sep_idx];
-        const password = decoded[sep_idx + 1 ..];
-
-        // Validate credentials
-        const auth_result = try request.global.security.authenticate(request, .{
-            .email = username,
-            .password = password,
-        });
-
-        // Check required roles if specified
-        if (route.required_roles) |required_roles| {
-            const has_required_role = try request.global.security.hasRequiredRoles(auth_result.user.id, required_roles);
-            if (!has_required_role) {
-                return AuthResult{
-                    .authenticated = true,
-                    .user_id = auth_result.user.id,
-                    .errors = SecurityError.UnauthorizedAccess,
-                    .strategy_used = .basic,
-                };
-            }
-        }
-
-        return AuthResult{
-            .authenticated = true,
-            .user_id = auth_result.user.id,
-            .strategy_used = .basic,
         };
     }
 

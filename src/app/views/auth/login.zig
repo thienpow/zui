@@ -17,6 +17,7 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
     const Params = struct {
         email: []const u8,
         password: []const u8,
+        remember: ?bool,
     };
 
     // Define a struct for error details to unify the type
@@ -35,11 +36,13 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
         return request.fail(.unprocessable_entity);
     };
 
+    const remember = params.remember orelse false;
+
     // Attempt authentication with credentials
     _ = request.global.security.authenticate(request, .{
         .email = params.email,
         .password = params.password,
-    }) catch |err| {
+    }, remember) catch |err| {
         std.log.scoped(.auth).debug("[route.login] Authentication failed with error: {s}", .{@errorName(err)});
         switch (err) {
             SecurityError.AccountLocked => {

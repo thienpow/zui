@@ -221,7 +221,7 @@ pub const Security = struct {
     //     }
     // }
 
-    pub fn authenticate(self: *Security, request: *jetzig.Request, credentials: Credentials) !AuthenticationCredentials {
+    pub fn authenticate(self: *Security, request: *jetzig.Request, credentials: Credentials, remember: bool) !AuthenticationCredentials {
         std.log.scoped(.auth).debug("[Security.authenticate] Starting authentication", .{});
 
         const client_ip = ip_utils.getClientIp(request);
@@ -271,7 +271,7 @@ pub const Security = struct {
 
         // 3. Create session
         std.log.scoped(.auth).debug("[Security.authenticate] Creating session for user ID: {d}", .{auth_result.user.id});
-        const session = try self.session.create(auth_result.user, request);
+        const session = try self.session.create(request, auth_result.user, remember);
         std.log.scoped(.auth).debug("[Security.authenticate] Session created", .{});
 
         // 4. Generate token
