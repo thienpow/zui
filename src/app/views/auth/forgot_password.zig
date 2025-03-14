@@ -8,10 +8,11 @@ const SecurityEvent = @import("../../security/types.zig").SecurityEvent;
 pub const layout = "auth"; // Use the same layout as login
 
 pub fn index(request: *jetzig.Request, _: *jetzig.Data) !jetzig.View {
-    return request.render(.ok); // Render the forgot-password.zmpl template
+    return request.render(.ok);
 }
 
 pub fn post(request: *jetzig.Request) !jetzig.View {
+
     // Define expected parameters
     const Params = struct {
         email: []const u8,

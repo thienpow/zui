@@ -1,1 +1,1 @@
-success
+reset password success

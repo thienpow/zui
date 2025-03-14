@@ -31,11 +31,6 @@ pub fn validateSessionBinding(session: Session, request: *jetzig.Request) !bool 
     std.log.scoped(.auth).debug("[validation.validateSessionBinding] Client IP: '{s}'", .{client_ip});
     std.log.scoped(.auth).debug("[validation.validateSessionBinding] Session metadata: ip='{s}', ua='{s}'", .{ session.metadata.ip_address orelse "null", session.metadata.user_agent orelse "null" });
 
-    // if (!isValidIPAddress(client_ip)) {
-    //     std.log.warn("Invalid IP address format: {s}", .{client_ip});
-    //     return error.InvalidIPAddress;
-    // }
-
     // Validate IP address binding if present
     if (session.metadata.ip_address) |stored_ip| {
         // Skip empty or special IPs
@@ -186,27 +181,6 @@ fn validateCustomData(data: std.json.Value) !void {
     }
 }
 
-// Optional: Add IP address validation helper
-pub fn isValidIPAddress(ip: []const u8) bool {
-
-    // Basic IPv4 validation
-    var splits = std.mem.splitScalar(u8, ip, '.');
-    var count: u8 = 0;
-
-    while (splits.next()) |octet| {
-        count += 1;
-        if (count > 4) return false;
-
-        if (octet.len > 3) return false;
-        if (octet.len > 1 and octet[0] == '0') return false;
-
-        const num = std.fmt.parseInt(u8, octet, 10) catch return false;
-        if (num > 255) return false;
-    }
-
-    return count == 4;
-}
-
 // Optional: Add User-Agent validation helper
 pub fn isValidUserAgent(ua: []const u8) bool {
     if (ua.len == 0 or ua.len > 512) return false;
@@ -217,27 +191,4 @@ pub fn isValidUserAgent(ua: []const u8) bool {
     }
 
     return true;
-}
-
-fn getClientIp(request: *jetzig.Request) []const u8 {
-    // Try various headers that might contain the client IP
-    if (request.headers.get("X-Forwarded-For")) |ip| {
-        // X-Forwarded-For might contain multiple IPs; get the first one
-        const comma_pos = std.mem.indexOf(u8, ip, ",");
-        if (comma_pos) |pos| {
-            return std.mem.trim(u8, ip[0..pos], " ");
-        }
-        return ip;
-    }
-
-    if (request.headers.get("X-Real-IP")) |ip| {
-        return ip;
-    }
-
-    if (request.headers.get("CF-Connecting-IP")) |ip| {
-        return ip;
-    }
-
-    // If no IP is found in headers, return a fallback value
-    return "127.0.0.1";
 }

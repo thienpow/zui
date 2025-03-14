@@ -17,27 +17,14 @@ pub fn deinit(self: *auth, request: *jetzig.http.Request) void {
 }
 
 pub fn afterRequest(self: *auth, request: *jetzig.http.Request) !void {
-    // Only handle authentication logic
-    const is_auth_path = isAuthPath(request.path.path);
-    std.log.scoped(.auth).debug("[auth.afterRequest] Route is {}", .{is_auth_path});
-    if (is_auth_path) return;
-
     const auth_success = try authenticateRequest(self, request);
     if (!auth_success) return;
-
-    // Handle redirects for authenticated users trying to access auth pages
-    if (is_auth_path) try handleAuthPageRedirects(request);
 }
 
 pub fn afterResponse(self: *auth, request: *jetzig.http.Request, response: *jetzig.http.Response) !void {
     _ = self;
     _ = request;
     _ = response;
-}
-
-// Helper function to determine if we're on an auth page
-fn isAuthPath(path: []const u8) bool {
-    return std.mem.startsWith(u8, path, "/auth");
 }
 
 // Main authentication function
@@ -75,27 +62,4 @@ pub fn authenticateRequest(self: *auth, request: *jetzig.http.Request) !bool {
 
     std.log.scoped(.auth).debug("[auth.authenticateRequest] Authentication successful", .{});
     return true; // Continue processing
-}
-
-// Handle redirects for authenticated users trying to access auth pages
-fn handleAuthPageRedirects(request: *jetzig.http.Request) !void {
-    var data = try request.data(.object);
-    if (data.get("user_id")) |user_id_value| {
-        std.log.scoped(.auth).debug("[auth.handleAuthPageRedirects] Found user_id in request data: {}", .{user_id_value});
-        std.log.scoped(.auth).debug("[auth.handleAuthPageRedirects] Authenticated user attempting to access auth page", .{});
-
-        const is_htmx = request.headers.get("HX-Request") != null;
-        if (is_htmx) {
-            // For HTMX requests, use HX-Redirect header
-            std.log.scoped(.auth).debug("[auth.handleAuthPageRedirects] Using HX-Redirect for HTMX request", .{});
-            try request.response.headers.append("HX-Redirect", "/dashboard");
-        } else {
-            // For normal requests, do a standard redirect
-            std.log.scoped(.auth).debug("[auth.handleAuthPageRedirects] Using standard redirect for browser request", .{});
-            request.response.status_code = .found;
-            try request.response.headers.append("Location", "/dashboard");
-        }
-        // Set a flag to indicate response has been handled
-        try data.put("response_handled", true);
-    }
 }

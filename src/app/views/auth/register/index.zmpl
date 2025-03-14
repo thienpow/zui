@@ -1,4 +1,4 @@
-<div class="auth-container">
+<div id="auth-container" class="auth-container">
     <div class="auth-box">
         <div id="error-message" class="error-message"></div>
         <div class="auth-header">
@@ -46,27 +46,21 @@
         </form>
 
         <div class="auth-footer">
-            <p>Already have an account? <a href="/auth/login"
-               hx-boost="true"
-               hx-target=".auth-container"
-               hx-swap="innerHTML">Sign in</a></p>
+            <p>Already have an account?
+                <a href="/auth/login">Sign in
+                </a>
+            </p>
         </div>
     </div>
 </div>
 
-@partial libs/styles/auth
-
 <script>
-    document.querySelector('.auth-form').addEventListener('submit', (event) => {
-        const errorMessageContainer = document.querySelector('#error-message');
-        errorMessageContainer.innerHTML = "";
-    });
+    const errorMessageContainer = document.querySelector('#error-message');
+    const authForm = document.querySelector('.auth-form');
 
-    document.body.addEventListener('htmx:responseError', (event) => {
+    const handleResponseError = (event) => {
         const { xhr } = event.detail;
         if (xhr.status === 422) { // Validation errors
-            const errorMessageContainer = document.querySelector('#error-message');
-            // Assuming server sends back JSON with error messages
             try {
                 const errors = JSON.parse(xhr.responseText);
                 errorMessageContainer.innerHTML = errors.message || Object.values(errors).join("<br>"); // Display general message or individual field errors
@@ -74,17 +68,24 @@
                 errorMessageContainer.innerHTML = "An error occurred during registration. Please try again.";
             }
 
-        } else if (xhr.status === 400) { // Other error
-            const errorMessageContainer = document.querySelector('#error-message');
-            errorMessageContainer.innerHTML = xhr.responseText; // Display other server side error
+        } else if (xhr.status === 400) {
+            errorMessageContainer.innerHTML = xhr.responseText;
         }
-    });
+    };
 
-    document.body.addEventListener('htmx:afterRequest', (event) => {
+    const handleAfterRequest = (event) => {
         const { xhr } = event.detail;
-         if (xhr.responseText.trim() === "success") {
-            window.location.href = "/auth/login"; //
+        if (xhr.status === 201) {
+            window.location.href = "/auth/login";
         }
-    });
+    };
+
+    const handleSubmit = (event) => {
+        errorMessageContainer.innerHTML = "";
+    };
+
+    document.body.addEventListener('htmx:responseError', handleResponseError);
+    document.body.addEventListener('htmx:afterRequest', handleAfterRequest);
+    authForm.addEventListener('submit', handleSubmit);
 
 </script>

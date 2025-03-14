@@ -1,4 +1,4 @@
-<div class="auth-container">
+<div id="auth-container" class="auth-container">
     <div class="auth-box">
         <div id="error-message" class="error-message"></div>
         <div class="auth-header">
@@ -60,15 +60,13 @@
         </form>
 
         <div class="auth-footer">
-            <p>Don't have an account? <a href="/auth/register"
-               hx-boost="true"
-               hx-target=".auth-container"
-               hx-swap="innerHTML">Sign up</a></p>
+            <p>Don't have an account?
+                <a href="/auth/register">Sign up
+                </a>
+            </p>
             <p>Or,
-                <a href="/auth/forgot_password"
-                    hx-boost="true"
-                    hx-target=".auth-container"
-                    hx-swap="innerHTML">Forgot Password?</a>
+                <a href="/auth/forgot_password">Forgot Password?
+                </a>
             </p>
         </div>
 
@@ -96,17 +94,12 @@
     </div>
 </div>
 
-@partial libs/styles/auth
-
 <script>
-    document.querySelector('.auth-form').addEventListener('submit', (event) => {
-        const errorMessageContainer = document.querySelector('#error-message');
-        errorMessageContainer.innerHTML = "";
-    });
+    const errorMessageContainer = document.querySelector('#error-message');
+    const authForm = document.querySelector('.auth-form');
 
-    document.body.addEventListener('htmx:responseError', (event) => {
+    const handleResponseError = (event) => {
         const { xhr } = event.detail;
-        const errorMessageContainer = document.querySelector('#error-message');
 
         switch (xhr.status) {
             case 401:
@@ -132,12 +125,23 @@
                 errorMessageContainer.innerHTML = "An unexpected error occurred. Please try again later or contact support.";
                 break;
         }
-    });
+    };
 
-    document.body.addEventListener('htmx:afterRequest', (event) => {
+    const handleAfterRequest = (event) => {
         const { xhr } = event.detail;
-        if (xhr.responseText.trim() === "success") {
+
+        if (xhr.status === 201) {
+            errorMessageContainer.innerHTML = "Success.";
             window.location.href = "/admin/dashboard";
         }
-    });
+    };
+
+    const handleSubmit = (event) => {
+        errorMessageContainer.innerHTML = "";
+    };
+
+    document.body.addEventListener('htmx:responseError', handleResponseError);
+    document.body.addEventListener('htmx:afterRequest', handleAfterRequest);
+    authForm.addEventListener('submit', handleSubmit);
+
 </script>

@@ -1,1 +1,1 @@
-success
+logout success

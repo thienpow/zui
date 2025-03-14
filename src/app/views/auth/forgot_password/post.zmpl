@@ -1,1 +1,1 @@
-success
+forgot password request success

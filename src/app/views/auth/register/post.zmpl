@@ -1,1 +1,1 @@
-success
+register success

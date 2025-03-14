@@ -77,5 +77,5 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
     };
 
     std.log.scoped(.password).debug("[route.password.reset] Password reset successful, redirecting to login", .{});
-    return request.redirect("/auth/login", .found);
+    return request.render(.created);
 }

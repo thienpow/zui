@@ -1,4 +1,4 @@
-<div class="auth-container">
+<div id="auth-container" class="auth-container">
     <div class="auth-box">
         <div class="auth-header">
             <h1>Forgot Password</h1>
@@ -20,22 +20,26 @@
                     <input type="email" id="email" name="email" placeholder="Enter your email" required>
                 </div>
             </div>
-             <div id="loading" class="htmx-indicator">
+            <div id="loading" class="htmx-indicator">
                 Loading...
             </div>
             <button type="submit" class="button">Send Reset Link</button>
         </form>
         <div class="auth-footer">
-            <p>Remember your password? <a href="/auth/login" hx-boost="true">Sign in</a></p>
+            <p>Remember your password?
+                <a href="/auth/login">Sign in
+                </a>
+            </p>
         </div>
+
     </div>
 </div>
 
-@partial libs/styles/auth
-
 <script>
     const errorMessageContainer = document.querySelector('#error-message');
-    document.body.addEventListener('htmx:responseError', (event) => {
+    const authForm = document.querySelector('.auth-form');
+
+    const handleResponseError = (event) => {
         const { xhr } = event.detail;
 
         switch (xhr.status) {
@@ -47,12 +51,21 @@
                 errorMessageContainer.innerHTML = "An unexpected error occurred. Please try again later.";
                 break;
         }
-    });
+    };
 
-    document.body.addEventListener('htmx:afterRequest', (event) => {
+    const handleAfterRequest = (event) => {
         const { xhr } = event.detail;
-        if (xhr.responseText.trim() === "success") {
-             errorMessageContainer.innerHTML = "If that email address is in our system, we have sent a password reset link.  Wait.., no email system made yet. check debug log for the reset_url.";
+        if (xhr.status === 201) {
+            errorMessageContainer.innerHTML = "If that email address is in our system, we have sent a password reset link.  Wait.., no email system made yet. check debug log for the reset_url.";
         }
-    });
+    };
+
+    const handleSubmit = (event) => {
+        errorMessageContainer.innerHTML = "";
+    };
+
+    document.body.addEventListener('htmx:responseError', handleResponseError);
+    document.body.addEventListener('htmx:afterRequest', handleAfterRequest);
+    authForm.addEventListener('submit', handleSubmit);
+
 </script>

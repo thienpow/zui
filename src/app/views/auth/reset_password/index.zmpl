@@ -1,4 +1,4 @@
-<div class="auth-container">
+<div id="auth-container" class="auth-container">
     <div class="auth-box">
         <div class="auth-header">
             <h1>Reset Password</h1>
@@ -37,17 +37,20 @@
             <button type="submit" class="button">Reset Password</button>
         </form>
         <div class="auth-footer">
-             <p>Remember your password? <a href="/auth/login" hx-boost="true">Sign in</a></p>
+             <p>Remember your password?
+                 <a href="/auth/login">Sign in
+                 </a>
+             </p>
         </div>
     </div>
 </div>
 
-@partial libs/styles/auth
-
 <script>
-    document.body.addEventListener('htmx:responseError', (event) => {
+    const errorMessageContainer = document.querySelector('#error-message');
+    const authForm = document.querySelector('.auth-form');
+
+    const handleResponseError = (event) => {
         const { xhr } = event.detail;
-        const errorMessageContainer = document.querySelector('#error-message');
 
         switch (xhr.status) {
             case 400:
@@ -63,5 +66,21 @@
                 errorMessageContainer.innerHTML = "An unexpected error occurred. Please try again later.";
                 break;
         }
-    });
+    };
+
+    const handleAfterRequest = (event) => {
+        const { xhr } = event.detail;
+        if (xhr.status === 201) {
+            errorMessageContainer.innerHTML = "Done reset password. You can go to login page to login now.";
+        }
+    };
+
+    const handleSubmit = (event) => {
+        errorMessageContainer.innerHTML = "";
+    };
+
+    document.body.addEventListener('htmx:responseError', handleResponseError);
+    document.body.addEventListener('htmx:afterRequest', handleAfterRequest);
+    authForm.addEventListener('submit', handleSubmit);
+
 </script>

@@ -7,15 +7,7 @@
     <script src="https://unpkg.com/htmx.org@2.0.0/dist/htmx.min.js"></script>
 
     @partial libs/styles/themes/default
-
-    <style>
-        main {
-            width: 100%;
-            margin: 0;
-            padding: 0;
-        }
-    </style>
-
+    @partial libs/styles/auth
     <script>
 
         //code can be removed in production

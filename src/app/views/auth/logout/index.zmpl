@@ -1,4 +1,4 @@
-<div class="auth-container">
+<div id="auth-container" class="auth-container">
     <div class="auth-box">
         <div id="error-message" class="error-message"></div>
         <div class="auth-header">
@@ -38,29 +38,42 @@
     </div>
 </div>
 
-@partial libs/styles/auth
-
 <script>
-    document.querySelector('.auth-form').addEventListener('submit', (event) => {
-        const errorMessageContainer = document.querySelector('#error-message');
-        errorMessageContainer.innerHTML = "";
-    });
+const errorMessageContainer = document.querySelector('#error-message');
+    const authForm = document.querySelector('.auth-form');
 
-    document.body.addEventListener('htmx:responseError', (event) => {
+    const handleResponseError = (event) => {
+      const { xhr } = event.detail;
+      const errorMessageContainer = document.querySelector('#error-message');
+
+      switch (xhr.status) {
+          default:
+              errorMessageContainer.innerHTML = "An unexpected error occurred. Please try again later or contact support.";
+              break;
+      }
+    };
+
+    const handleAfterRequest = (event) => {
         const { xhr } = event.detail;
-        const errorMessageContainer = document.querySelector('#error-message');
-
-        switch (xhr.status) {
-            default:
-                errorMessageContainer.innerHTML = "An unexpected error occurred. Please try again later or contact support.";
-                break;
-        }
-    });
-
-    document.body.addEventListener('htmx:afterRequest', (event) => {
-        const { xhr } = event.detail;
-        if (xhr.responseText.trim() === "success") {
+        if (xhr.responseText.trim() === "logout success") {
             window.location.href = "/";
         }
+    };
+
+    const handleSubmit = (event) => {
+        errorMessageContainer.innerHTML = "";
+    };
+
+    document.body.addEventListener('htmx:responseError', handleResponseError);
+    document.body.addEventListener('htmx:afterRequest', handleAfterRequest);
+    authForm.addEventListener('submit', handleSubmit);
+
+    document.body.addEventListener('htmx:beforeCleanup', (event) => {
+        if (event.target === authForm) {
+            document.body.removeEventListener('htmx:responseError', handleResponseError);
+            document.body.removeEventListener('htmx:afterRequest', handleAfterRequest);
+            authForm.removeEventListener('submit', handleSubmit);
+        }
     });
+
 </script>
