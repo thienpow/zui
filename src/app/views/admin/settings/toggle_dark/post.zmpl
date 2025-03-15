@@ -1,6 +1,9 @@
-<input type="checkbox" {{$.dark}} name="dark"
-    hx-post="/admin/settings/toggle_dark"
-    hx-target="#toggle-switch"
-    hx-swap="innerHTML"
-    hx-include="this">
-<span class="toggle-slider"></span>
+@zig {
+    if (zmpl.getT(.string, "dark")) |dark|{
+        if (std.mem.eql(u8, dark, "checked")) {
+            @partial libs/styles/themes/default_dark
+        } else {
+            @partial libs/styles/themes/default
+        }
+    }
+}

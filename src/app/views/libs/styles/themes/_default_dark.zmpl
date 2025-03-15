@@ -1,4 +1,4 @@
-<style>
+<style id="root-styles">
 :root {
     /* Colors */
     --color-primary: #1a242f; /* Darker primary color */

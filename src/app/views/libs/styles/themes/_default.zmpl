@@ -1,4 +1,4 @@
-<style>
+<style id="root-styles">
 :root {
     /* Colors */
     --color-primary: #2c3e50;

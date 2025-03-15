@@ -56,8 +56,8 @@
                     <label id="toggle-switch" class="toggle-switch">
                         <input type="checkbox" {{$.dark}} name="dark"
                             hx-post="/admin/settings/toggle_dark"
-                            hx-target="#toggle-switch"
-                            hx-swap="innerHTML"
+                            hx-target="#root-styles"
+                            hx-swap="outerHTML"
                             hx-include="this">
                         <span class="toggle-slider"></span>
                     </label>
@@ -337,14 +337,3 @@
         }
     }
 </style>
-
-<script>
-document.body.addEventListener('htmx:afterRequest', (event) => {
-    const { xhr } = event.detail;
-    if (event.target && event.target.id === "toggle-switch") {
-        if (xhr.status === 201) {
-          location.href = "/admin/settings";
-        }
-    }
-});
-</script>
