@@ -1,6 +1,6 @@
 <header>
     <nav>
-        <div class="logo">Logo</div>
+        @partial libs/components/brand_topbar
         @partial layouts/landing/menu_navbar
     </nav>
 </header>
@@ -39,11 +39,6 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-    }
-
-    .logo {
-        font-size: 1.5rem;
-        font-weight: bold;
     }
 
     @media (max-width: 480px) {
