@@ -2,13 +2,7 @@
     <div class="auth-box">
         <div id="error-message" class="error-message"></div>
         <div class="auth-header">
-            <div class="logo">
-                <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                </svg>
-                <span class="logo-text">zUI Portal</span>
-            </div>
-            <h1>To the future</h1>
+            @partial libs/components/brand
             <p class="subtitle">Please enter your credentials to sign in</p>
         </div>
         <!--  -->

@@ -2,7 +2,7 @@
     <div class="auth-box">
         <div class="auth-header">
             <h1>Forgot Password</h1>
-            <p>Enter your email address and we'll send you a link to reset your password.</p>
+            <p class="subtitle">Enter your email address and we'll send you a link to reset your password.</p>
         </div>
         <div id="error-message" class="error-message"></div>
         <form id="auth-form" class="auth-form"

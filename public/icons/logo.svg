@@ -1,0 +1,10 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Circle -->
+  <circle cx="100" cy="100" r="90" fill="#2b2b2b"/>
+
+  <!-- "z" Letter -->
+  <path d="M60 60 L100 60 L60 140 L100 140" stroke="#00ffcc" stroke-width="20" fill="none"/>
+
+  <!-- "UI" Text -->
+  <text x="110" y="130" font-family="Arial, sans-serif" font-size="60" font-weight="bold" fill="#ffffff">UI</text>
+</svg>

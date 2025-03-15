@@ -1,9 +1,6 @@
 <div class="sidebar-overlay" onclick="closeSidebar()"></div>
 <div id="sidebar" class="sidebar">
-    <div class="sidebar-brand">
-        <span class="brand-text">zUI</span>
-        <span class="brand-subtitle">Admin Portal</span>
-    </div>
+    @partial libs/components/brand_sidebar
     <ul class="sidebar-menu">
         <li>
             <a hx-get="/admin/dashboard"
@@ -97,32 +94,6 @@
         z-index: 999;
         opacity: 0;
         transition: opacity 0.3s ease;
-    }
-
-    .sidebar-brand {
-        color: var(--color-text-primary);
-        font-weight: bold;
-        padding: 0 15px;
-        margin-bottom: 40px;
-    }
-
-    .brand-text {
-        font-family: 'Georgia', serif;
-        font-size: 32px;
-        font-weight: bold;
-        display: block;
-        letter-spacing: -0.5px;
-        background: linear-gradient(45deg, var(--color-text-primary), #34495e);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-
-    .brand-subtitle {
-        font-size: 14px;
-        color: var(--color-text-primary);
-        opacity: 0.7;
-        display: block;
-        margin-top: 5px;
     }
 
     .menu-icon {
