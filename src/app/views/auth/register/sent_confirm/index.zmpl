@@ -1,7 +1,7 @@
 <div id="auth-container" class="auth-container">
     <div class="auth-box">
         <div class="auth-header">
-            <h1>Email Sent!</h1>
+            <h1>Activation Email Sent!</h1>
         </div>
         <div class="auth-body">
             <p>We’ve sent a email confirmation link to <strong>{{.email}}</strong>.</p>

@@ -2,7 +2,7 @@ const std = @import("std");
 const jetzig = @import("jetzig");
 
 pub const layout = "admin";
-pub fn index(request: *jetzig.Request, _: *jetzig.Data) !jetzig.View {
+pub fn index(request: *jetzig.Request) !jetzig.View {
     var cookies = try request.cookies();
     var dark = blk: {
         if (cookies.get("dark")) |cookie| {

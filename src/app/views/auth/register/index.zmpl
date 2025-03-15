@@ -47,7 +47,7 @@
 
         <div class="auth-footer">
             <p>Already have an account?
-                <a href="/auth/login">Sign in
+                <a href="/auth/login" hx-boost="true">Sign in
                 </a>
             </p>
         </div>

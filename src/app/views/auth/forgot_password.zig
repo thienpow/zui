@@ -7,7 +7,7 @@ const SecurityEvent = @import("../../security/types.zig").SecurityEvent;
 
 pub const layout = "auth"; // Use the same layout as login
 
-pub fn index(request: *jetzig.Request, _: *jetzig.Data) !jetzig.View {
+pub fn index(request: *jetzig.Request) !jetzig.View {
     return request.render(.ok);
 }
 

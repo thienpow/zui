@@ -3,7 +3,7 @@ const jetzig = @import("jetzig");
 const password_utils = @import("../../utils/password.zig");
 
 pub const layout = "auth";
-pub fn index(request: *jetzig.Request, _: *jetzig.Data) !jetzig.View {
+pub fn index(request: *jetzig.Request) !jetzig.View {
     return request.render(.ok);
 }
 
