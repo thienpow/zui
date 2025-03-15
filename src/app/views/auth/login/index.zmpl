@@ -25,7 +25,7 @@
                         <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z"/>
                         <path d="M2 8l10 5 10-5"/>
                     </svg>
-                    <input type="email" id="email" name="email" placeholder="Enter your email" autocomplete="email" required>
+                    <input type="email" id="email" name="email" placeholder="Enter your email" required>
                 </div>
             </div>
 
@@ -35,7 +35,7 @@
                         <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
                         <path d="M7 11V7a5 5 0 0110 0v4"/>
                     </svg>
-                    <input type="password" id="password" name="password" placeholder="Enter your password" autocomplete="current-password" required>
+                    <input type="password" id="password" name="password" placeholder="Enter your password" required>
                 </div>
             </div>
 

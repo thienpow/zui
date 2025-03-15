@@ -152,6 +152,7 @@
         height: 20px;
         color: var(--color-text-primary);
         opacity: 0.4;
+        z-index: 1;
     }
     input:invalid {
         border-color: #dc2626;
@@ -165,14 +166,6 @@
         border-radius: 8px;
         font-size: 15px;
         transition: all 0.2s;
-    }
-
-    input[type="text"]:focus,
-    input[type="email"]:focus,
-    input[type="password"]:focus {
-        outline: none;
-        border-color: var(--color-text-primary);
-        box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
     }
 
     .toggle-password {

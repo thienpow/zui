@@ -20,16 +20,16 @@
             hx-indicator="#loading">
 
             <div class="form-group">
+                <input type="email" id="email" name="email" placeholder="Enter your email" required>
+            </div>
+            <div class="form-group">
+                <input type="password" id="password" name="password" placeholder="Enter your password" required>
+            </div>
+            <div class="form-group">
+                <input type="password" id="password_confirmation" name="password_confirmation" placeholder="Confirm your password" required>
+            </div>
+            <div class="form-group">
                 <input type="text" id="username" name="username" placeholder="Enter your username" required>
-            </div>
-            <div class="form-group">
-                <input type="email" id="email" name="email" placeholder="Enter your email" autocomplete="email" required>
-            </div>
-            <div class="form-group">
-                <input type="password" id="password" name="password" placeholder="Enter your password" autocomplete="new-password" required>
-            </div>
-            <div class="form-group">
-                <input type="password" id="password_confirmation" name="password_confirmation" placeholder="Confirm your password" autocomplete="new-password" required>  <!-- Added password confirmation -->
             </div>
 
 
