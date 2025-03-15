@@ -34,7 +34,7 @@
             <div id="loading" class="htmx-indicator">
                 Loading...
             </div>
-            <button type="submit" class="button">Reset Password</button>
+            @partial libs/components/btn_submit("Reset Password")
         </form>
         <div class="auth-footer">
              <p>Remember your password?

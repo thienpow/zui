@@ -23,7 +23,7 @@
             <div id="loading" class="htmx-indicator">
                 Loading...
             </div>
-            <button type="submit" class="button">Send Reset Link</button>
+            @partial libs/components/btn_submit("Send Reset Link")
         </form>
         <div class="auth-footer">
             <p>Remember your password?

@@ -24,12 +24,7 @@
                 Loading...
             </div>
 
-            <button type="submit" class="button" aria-label="Yes">
-                <span>Sign Out</span>
-                <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M14 5l7 7m0 0l-7 7m7-7H3"/>
-                </svg>
-            </button>
+            @partial libs/components/btn_submit("Sign Out")
         </form>
         <div class="auth-footer">
             <p><a href="/admin/dashboard">No, back to Dashboard</a></p>

@@ -83,6 +83,10 @@
         transform: translateY(-1px);
     }
 
+    a, a:hover, a:active, a:visited {
+        text-decoration: none;
+    }
+
     select {
         border: 1px solid rgba(0, 0, 0, 0.1);
         padding: 10px 20px;

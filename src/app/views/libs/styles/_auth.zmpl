@@ -1,6 +1,7 @@
 
 <style>
     main {
+        background: inherit;
         width: 100%;
         margin: 0;
         padding: 0;
@@ -49,13 +50,11 @@
         align-items: center;
         justify-content: center;
         padding: 24px;
-        background: #f8fafc;
     }
 
     .auth-box {
         width: 100%;
         max-width: 420px;
-        background: white;
         border-radius: 16px;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1),
                     0 2px 4px -1px rgba(0, 0, 0, 0.06);
@@ -197,69 +196,72 @@
         height: 20px;
     }
 
+    /* custom checkbox */
     .checkbox-container {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        cursor: pointer;
-        user-select: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
     }
 
     .checkbox-container input {
-        display: none;
+      display: none;
     }
 
     .checkmark {
-        width: 18px;
-        height: 18px;
-        border: 2px solid #e2e8f0;
-        border-radius: 4px;
-        position: relative;
-        transition: all 0.2s;
+      width: 18px;
+      height: 18px;
+      border: 2px solid #e2e8f0;
+      border-radius: 4px;
+      position: relative;
+      transition: all 0.2s;
     }
 
     .checkbox-container input:checked + .checkmark {
-        background: var(--color-text-primary);
-        border-color: var(--color-text-primary);
+      background: var(--color-text-primary);
+      border-color: var(--color-text-primary);
     }
 
     .checkbox-container input:checked + .checkmark:after {
-        content: "";
-        position: absolute;
-        left: 5px;
-        top: 2px;
-        width: 4px;
-        height: 8px;
-        border: solid white;
-        border-width: 0 2px 2px 0;
-        transform: rotate(45deg);
+      content: "";
+      position: absolute;
+      left: 5px;
+      top: 2px;
+      width: 4px;
+      height: 8px;
+      border: solid white;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
     }
 
-    .button {
+    @media (prefers-color-scheme: dark) {
+      .checkmark {
+        border-color: #666; /* Subtle border in dark mode */
+      }
+      .checkbox-container input:checked + .checkmark {
+        background: #1e90ff; /* Blue instead of white */
+        border-color: #1e90ff;
+      }
+    }
+
+    .btn-submit {
         display: flex;
         align-items: center;
         justify-content: center;
         gap: 8px;
-        width: 100%;
-        padding: 12px;
-        background: var(--color-text-primary);
-        color: white;
-        border: none;
-        border-radius: 8px;
         font-size: 16px;
         font-weight: 500;
-        cursor: pointer;
-        transition: all 0.2s;
+        padding: 12px 24px;
+        width: 100%;
+        border: 1px solid rgba(169, 169, 169, 0.1);
+        border-radius: var(--border-radius);
     }
 
-    .button:hover {
-        opacity: 0.9;
-        transform: translateY(-1px);
-    }
-
-    .button-icon {
-        width: 20px;
-        height: 20px;
+    @media (max-width: 480px) {
+        .btn-submit {
+            padding: 8px 16px;
+        }
     }
 
     .auth-footer {
