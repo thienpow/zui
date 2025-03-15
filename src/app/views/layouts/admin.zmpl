@@ -14,6 +14,7 @@
         }
     }
 }
+@partial libs/styles/themes/core
 <style>
     main {
         background: inherit;

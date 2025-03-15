@@ -14,7 +14,7 @@
         }
     }
 }
-
+@partial libs/styles/themes/core
 @partial libs/styles/auth
 </head>
 <body>
