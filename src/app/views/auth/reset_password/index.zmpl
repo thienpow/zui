@@ -1,4 +1,4 @@
-<div id="auth-container" class="auth-container">
+<section id="auth-container" class="auth-container">
     <div class="auth-box">
         <div class="auth-header">
             <h1>Reset Password</h1>
@@ -43,4 +43,4 @@
              </p>
         </div>
     </div>
-</div>
+</section>

@@ -1,24 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>About - zUI</title>
-    <script src="https://unpkg.com/htmx.org@2.0.0/dist/htmx.min.js"></script>
+<title>zUI Security</title>
+@partial layouts/meta
+@partial layouts/htmx
 
-    @zig {
-        if (zmpl.getT(.string, "dark")) |dark|{
-            if (std.mem.eql(u8, dark, "checked")) {
-                @partial libs/styles/themes/default_dark
-            } else {
-                @partial libs/styles/themes/default
-            }
+@zig {
+    if (zmpl.getT(.string, "dark")) |dark|{
+        if (std.mem.eql(u8, dark, "checked")) {
+            @partial libs/styles/themes/default_dark
+        } else {
+            @partial libs/styles/themes/default
         }
     }
+}
 
-    @partial libs/styles/auth
-
-
+@partial libs/styles/auth
 </head>
 <body>
     <main>{{zmpl.content}}</main>
@@ -74,7 +71,7 @@
                     const url = `/auth/register/sent_confirm?email=${encodeURIComponent(userEmail)}`;
                     htmx.ajax('GET', url, {
                         target: '#auth-container',
-                        swap: 'innerHTML'
+                        swap: 'outerHTML'
                     }).then(() => {
                         console.log('Navigated to sent_confirm with email:', userEmail);
                     });
@@ -84,7 +81,7 @@
                     const url = `/auth/forgot_password/sent_confirm?email=${encodeURIComponent(userEmail)}`;
                     htmx.ajax('GET', url, {
                         target: '#auth-container',
-                        swap: 'innerHTML'
+                        swap: 'outerHTML'
                     }).then(() => {
                         console.log('Navigated to sent_confirm with email:', userEmail);
                     });
@@ -93,7 +90,7 @@
                     const url = `/auth/reset_password/reset_confirm`;
                     htmx.ajax('GET', url, {
                         target: '#auth-container',
-                        swap: 'innerHTML'
+                        swap: 'outerHTML'
                     }).then(() => {
                         console.log('Navigated to reset_confirm:');
                     });

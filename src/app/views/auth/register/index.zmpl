@@ -1,4 +1,4 @@
-<div id="auth-container" class="auth-container">
+<section id="auth-container" class="auth-container">
     <div class="auth-box">
         <div id="error-message" class="error-message"></div>
         <div class="auth-header">
@@ -47,4 +47,4 @@
             </p>
         </div>
     </div>
-</div>
+</section>

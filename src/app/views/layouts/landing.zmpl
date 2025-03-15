@@ -1,68 +1,67 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>About - zUI</title>
-    <script src="https://unpkg.com/htmx.org@2.0.0/dist/htmx.min.js"></script>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-                "Helvetica Neue", Arial, sans-serif;
-            background-color: #f5f5f5;
-            margin: 0;
-            padding: 0;
-            min-height: 100vh;
-        }
+<title>zUI - BuildFast with Fullstack UIKit</title>
+@partial layouts/meta
+@partial layouts/htmx
 
-        html {
-            box-sizing: border-box;
-        }
+<style>
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+            "Helvetica Neue", Arial, sans-serif;
+        background-color: #f5f5f5;
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+    }
 
-        *,
-        *:before,
-        *:after {
-            box-sizing: inherit;
-        }
+    html {
+        box-sizing: border-box;
+    }
 
-        /* Additional Utility Classes */
-        .text-gradient {
-            background: linear-gradient(90deg, #00ffcc, #00ccff);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
+    *,
+    *:before,
+    *:after {
+        box-sizing: inherit;
+    }
 
-        .highlight {
-            color: #00ccff;
-        }
+    /* Additional Utility Classes */
+    .text-gradient {
+        background: linear-gradient(90deg, #00ffcc, #00ccff);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
 
-        main {
-            width: 100%;
-            margin: 0;
-            padding: 0;
-        }
+    .highlight {
+        color: #00ccff;
+    }
+
+    main {
+        width: 100%;
+        margin: 0;
+        padding: 0;
+    }
 
 
-        a {
-            display: inline-flex;
-            align-items: center;
-            color: inherit;
-            text-decoration: none;
-            padding: 4px 8px;
-            border-radius: 4px;
-            transition: all 0.3s ease;
-            position: relative;
-            cursor: pointer;
-        }
+    a {
+        display: inline-flex;
+        align-items: center;
+        color: inherit;
+        text-decoration: none;
+        padding: 4px 8px;
+        border-radius: 4px;
+        transition: all 0.3s ease;
+        position: relative;
+        cursor: pointer;
+    }
 
-        a:hover {
-            color: #0366d6;
-            background-color: rgba(3, 102, 214, 0.1);
-            transform: translateY(-1px);
-        }
+    a:hover {
+        color: #0366d6;
+        background-color: rgba(3, 102, 214, 0.1);
+        transform: translateY(-1px);
+    }
 
-    </style>
-
+</style>
 </head>
 <body>
     @partial layouts/landing/header

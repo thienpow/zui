@@ -87,6 +87,15 @@
         text-decoration: none;
     }
 
+    p {
+      line-height: 1.5; /* Improves readability */
+    }
+
+    p a {
+      padding: 0.5rem 0.75rem; /* Finger-friendly tap area */
+      display: inline-block; /* Ensures padding applies correctly */
+    }
+
     select {
         border: 1px solid rgba(0, 0, 0, 0.1);
         padding: 10px 20px;
