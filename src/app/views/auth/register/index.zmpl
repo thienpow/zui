@@ -21,7 +21,7 @@
                 <input type="password" id="password" name="password" placeholder="Enter your password" required>
             </div>
             <div class="form-group">
-                <input type="password" id="password_confirmation" name="password_confirmation" placeholder="Confirm your password" required>
+                <input type="password" id="password_confirm" name="password_confirm" placeholder="Confirm your password" required>
             </div>
             <div class="form-group">
                 <input type="text" id="username" name="username" placeholder="Enter your username" required>

@@ -12,6 +12,7 @@ const Security = @import("app/security/security.zig").Security;
 const SecurityConfig = @import("app/security/config.zig").SecurityConfig;
 
 const ConfigManager = @import("app/config/config.zig").ConfigManager;
+const UserManager = @import("app/user/user.zig").UserManager;
 
 const custom_log = @import("log.zig");
 pub const std_options: std.Options = .{
@@ -20,8 +21,9 @@ pub const std_options: std.Options = .{
 };
 
 pub const Global = struct {
-    security: Security,
     config_manager: ConfigManager,
+    security: Security,
+    user_manager: UserManager,
 };
 
 // Override default settings in `jetzig.config` here:
@@ -111,10 +113,15 @@ pub fn main() !void {
     defer security.deinit();
     // -------------------------------------
 
+    // Initialize UserManager
+    var user_manager = try UserManager.init(allocator, &security);
+    defer user_manager.deinit();
+
     const global = try allocator.create(Global);
     global.* = .{
-        .security = security,
         .config_manager = config_manager_ptr.*,
+        .security = security,
+        .user_manager = user_manager,
     };
 
     try app.start(routes, .{ .global = global });
