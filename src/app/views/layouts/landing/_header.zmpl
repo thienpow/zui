@@ -7,7 +7,6 @@
 @partial layouts/landing/menu_mobile
 
 
-
 <style>
     header {
         background-color: rgba(26, 26, 26, 0.8);
@@ -18,19 +17,9 @@
         position: fixed;
         width: 100%;
         top: 0;
-        z-index: 1000;
         box-sizing: border-box;
         height: 64px;
-    }
-
-    header::after {
-        content: "";
-        position: absolute;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        height: 1px;
-        background: rgba(255, 255, 255, 0.1);
+        z-index: 100;
     }
 
     nav {

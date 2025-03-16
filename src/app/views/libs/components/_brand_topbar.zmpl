@@ -1,17 +1,26 @@
-<div class="brand-conntainer">
-    <img src="/icons/logo.svg" class="logo" alt="zUI Logo">
+<div class="brand-topbar-conntainer">
+    <img src="/icons/logo.svg" class="logo-topbar" alt="zUI Logo">
 </div>
 <style>
-.brand-container {
-  height: 64px;
-  overflow: visible;
+.brand-topbar-container {
+    display: flex;
+    height: 54px;
+    overflow: visible;
 }
-.logo {
-  position: relative;
-  margin-top: 6px;
-  top: 0;
-  width: 120px;
-  height: 52px;
-  z-index: 1;
+.logo-topbar {
+    visibility: visible;
+    position: absolute;
+    top: 6px;
+    width: 120px;
+    height: 52px;
+    z-index: 1003;
+}
+@media (max-width: 768px) {
+    .brand-topbar-container {
+        display: none;
+    }
+    .logo-topbar {
+        visibility: hidden;
+    }
 }
 </style>

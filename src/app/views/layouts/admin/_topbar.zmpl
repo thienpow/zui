@@ -15,7 +15,7 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        z-index: 998;
+        z-index: 80;
     }
 
     /* Media query for small screens */
