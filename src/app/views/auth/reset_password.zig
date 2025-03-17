@@ -53,10 +53,6 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
         std.log.scoped(.password).debug("[route.password.reset] Password reset failed with error: {s}", .{@errorName(err)});
 
         switch (err) {
-            SecurityError.InvalidToken => {
-                std.log.scoped(.password).debug("[route.password.reset] Invalid or expired token, returning 401", .{});
-                return request.fail(.unauthorized);
-            },
             SecurityError.PasswordMismatch => {
                 std.log.scoped(.password).debug("[route.password.reset] Password mismatch, returning 400", .{});
                 return request.fail(.bad_request);
@@ -64,6 +60,10 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
             SecurityError.WeakPassword => {
                 std.log.scoped(.password).debug("[route.password.reset] Password too weak, returning 400", .{});
                 return request.fail(.bad_request);
+            },
+            SecurityError.InvalidToken => {
+                std.log.scoped(.password).debug("[route.password.reset] Invalid or expired token, returning 401", .{});
+                return request.fail(.unauthorized);
             },
             SecurityError.RateLimitExceeded => {
                 std.log.scoped(.password).debug("[route.password.reset] Rate limit exceeded, returning 429", .{});

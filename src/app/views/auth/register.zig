@@ -84,19 +84,19 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
         switch (err) {
             UserManagerError.EmailAlreadyExists => {
                 std.log.debug("Email already exists: {s}", .{params.email});
-                return request.render(.conflict);
+                return request.render(.conflict); //409
             },
             UserManagerError.UsernameAlreadyExists => {
                 std.log.debug("Username already exists: {s}", .{params.username});
-                return request.render(.conflict);
+                return request.render(.conflict); //409
             },
             UserManagerError.InvalidUserData => {
                 std.log.debug("Invalid user data provided", .{});
-                return request.render(.bad_request);
+                return request.render(.bad_request); //400
             },
             else => {
                 std.log.debug("Unexpected error during registration: {}", .{err});
-                return request.render(.internal_server_error);
+                return request.render(.internal_server_error); //500
             },
         }
     };

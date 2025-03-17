@@ -45,25 +45,25 @@ pub fn post(request: *jetzig.Request) !jetzig.View {
     }, remember) catch |err| {
         std.log.scoped(.auth).debug("[route.login] Authentication failed with error: {s}", .{@errorName(err)});
         switch (err) {
-            SecurityError.AccountLocked => {
-                std.log.scoped(.auth).debug("[route.login] Account locked, returning 403", .{});
-                return request.fail(.forbidden); // 403
-            },
-            SecurityError.RateLimitExceeded => {
-                std.log.scoped(.auth).debug("[route.login] Rate limit exceeded, returning 429", .{});
-                return request.fail(.too_many_requests); // 429
-            },
-            SecurityError.UserNotFound => {
-                std.log.scoped(.auth).debug("[route.login] User not found, returning 404", .{});
-                return request.fail(.not_found); // 404
+            SecurityError.ValidationError => {
+                std.log.scoped(.auth).debug("[route.login] Validation error, returning 400", .{});
+                return request.fail(.bad_request); // 400
             },
             SecurityError.InvalidCredentials => {
                 std.log.scoped(.auth).debug("[route.login] Invalid credentials, returning 401", .{});
                 return request.fail(.unauthorized); // 401
             },
-            SecurityError.ValidationError => {
-                std.log.scoped(.auth).debug("[route.login] Validation error, returning 400", .{});
-                return request.fail(.bad_request); // 400
+            SecurityError.AccountLocked => {
+                std.log.scoped(.auth).debug("[route.login] Account locked, returning 403", .{});
+                return request.fail(.forbidden); // 403
+            },
+            SecurityError.UserNotFound => {
+                std.log.scoped(.auth).debug("[route.login] User not found, returning 404", .{});
+                return request.fail(.not_found); // 404
+            },
+            SecurityError.RateLimitExceeded => {
+                std.log.scoped(.auth).debug("[route.login] Rate limit exceeded, returning 429", .{});
+                return request.fail(.too_many_requests); // 429
             },
             else => {
                 std.log.err("[route.login] Unexpected error: {s}", .{@errorName(err)});
