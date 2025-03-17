@@ -26,6 +26,7 @@ pub const SecurityEvent = enum {
     rate_limit_exceeded,
 
     // Account security events
+    account_created,
     account_locked,
     account_unlocked,
     account_disabled,

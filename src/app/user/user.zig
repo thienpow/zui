@@ -1,6 +1,6 @@
 const std = @import("std");
 const jetzig = @import("jetzig");
-const security = @import("../security/security.zig");
+const Security = @import("../security/security.zig").Security;
 const email_utils = @import("../utils/email.zig");
 const password_utils = @import("../utils/password.zig");
 const types = @import("types.zig");
@@ -12,12 +12,12 @@ pub usingnamespace types;
 
 pub const UserManager = struct {
     allocator: std.mem.Allocator,
-    security: *security.Security,
+    security: *Security,
 
-    pub fn init(allocator: std.mem.Allocator, security_module: *security.Security) !UserManager {
+    pub fn init(allocator: std.mem.Allocator, security: *Security) !UserManager {
         return UserManager{
             .allocator = allocator,
-            .security = security_module,
+            .security = security,
         };
     }
 
@@ -77,10 +77,12 @@ pub const UserManager = struct {
         // }
 
         // Log audit event
-        // try self.security.logAuditEvent(request, .{
-        //     .event_type = "USER_REGISTERED",
-        //     .user_id = user_id,
-        //     .details = "New user registration",
+        // try self.security.audit.log(request, user_id, .{
+        //     .event = SecurityEvent.account_created,
+        //     .resource_id = user_id,
+        //     .resource_type = "user",
+        //     .ip_address = ip_address,
+        //     .action_details = "New user registration",
         // });
 
         return 0;
