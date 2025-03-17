@@ -75,19 +75,6 @@ select {
     height: 20px;
 }
 
-.brand-conntainer {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-}
-.logo {
-  width: 100%;
-  height: 100%;
-  opacity: 0; /* Start invisible */
-  animation: fadeIn 0.5s ease-in forwards; /* Fade in over 0.5s */
-}
-
 /* Fade-in animation */
 @keyframes fadeIn {
   from {
