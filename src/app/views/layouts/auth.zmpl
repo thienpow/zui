@@ -41,6 +41,9 @@
                 case 404:
                     errorMessageContainer.innerHTML = "Account not found. Please check your email or register for a new account.";
                     break;
+                case 409:
+                    errorMessageContainer.innerHTML = "User already existed.  Please try again.";
+                    break;
                 case 429:
                     errorMessageContainer.innerHTML = "Too many login attempts. Please try again later.";
                     break;

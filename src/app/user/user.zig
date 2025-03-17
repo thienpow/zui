@@ -39,20 +39,17 @@ pub const UserManager = struct {
             return UserManagerError.InvalidUserData;
         }
 
-        // Check for existing email/username
-        // const existing_user = try request.repo.find(.User, .{
-        //     .email = user_data.email,
-        // });
-        // if (existing_user != null) {
-        //     return UserManagerError.EmailAlreadyExists;
-        // }
+        // Check for existing email using .where()
 
-        // const existing_username = try request.repo.find(.User, .{
-        //     .username = user_data.username,
-        // });
-        // if (existing_username != null) {
-        //     return UserManagerError.UsernameAlreadyExists;
-        // }
+        if (try request.repo.execute(jetzig.database.Query(.User).findBy(.{ .email = user_data.email }))) |user| {
+            std.log.scoped(.user).debug("[UserManager.registerUser] user_by_email: {}", .{user});
+            return UserManagerError.EmailAlreadyExists;
+        }
+
+        if (try request.repo.execute(jetzig.database.Query(.User).findBy(.{ .username = user_data.username }))) |user| {
+            std.log.scoped(.user).debug("[UserManager.registerUser] user_by_username: {}", .{user});
+            return UserManagerError.UsernameAlreadyExists;
+        }
 
         // Hash password
         const hashedPassword = try password_utils.hashPassword(self.allocator, user_data.password);
